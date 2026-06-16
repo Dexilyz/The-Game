@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>🎡 Park Tycoon</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Game canvas -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- HUD top bar -->
+  <div id="hud">
+    <div id="stats-bar">
+      <div class="stat money">
+        <span class="icon">💰</span>
+        <span id="money-display">$6,000</span>
+      </div>
+      <div class="stat day">
+        <span class="icon">📅</span>
+        <span id="day-display">Day 1</span>
+      </div>
+      <div class="stat">
+        <span id="rating-display">⭐☆☆☆☆</span>
+      </div>
+      <div class="stat">
+        <span class="icon">👥</span>
+        <span id="visitor-display">0</span>
+      </div>
+      <div class="stat">
+        <span class="icon">👷</span>
+        <span id="builder-display">0</span>
+      </div>
+      <div id="day-progress-wrap">
+        <div id="day-progress"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Speed controls -->
+  <div class="speed-controls">
+    <button class="speed-btn active" data-speed="1">1×</button>
+    <button class="speed-btn" data-speed="2">2×</button>
+    <button class="speed-btn" data-speed="3">3×</button>
+  </div>
+
+  <!-- Bottom toolbar -->
+  <div id="toolbar">
+    <button class="tool-btn" data-action="build">
+      <span>🔨</span><small>Build</small>
+    </button>
+    <button class="tool-btn" data-action="path">
+      <span>🛤️</span><small>Path</small>
+    </button>
+    <button class="tool-btn" data-action="hire">
+      <span>👷</span><small>Hire</small>
+    </button>
+    <button class="tool-btn" data-action="invest">
+      <span>💼</span><small>Invest</small>
+    </button>
+    <button class="tool-btn" data-action="info">
+      <span>📊</span><small>Stats</small>
+    </button>
+  </div>
+
+  <!-- ===== BUILD PANEL ===== -->
+  <div id="build-panel" class="panel hidden">
+    <div class="panel-header">
+      <h2>🔨 Build Attraction</h2>
+      <button class="close-btn" data-close="build-panel">✕</button>
+    </div>
+    <div id="attraction-grid"></div>
+  </div>
+
+  <!-- ===== HIRE PANEL ===== -->
+  <div id="hire-panel" class="panel hidden">
+    <div class="panel-header">
+      <h2>👷 Hire Workers</h2>
+      <button class="close-btn" data-close="hire-panel">✕</button>
+    </div>
+    <div class="hire-content">
+      <div class="hire-status">
+        <div class="hire-avatar">👷</div>
+        <div class="hire-info">
+          <h3>Construction Crew</h3>
+          <p>Builders construct attractions and upgrades. More builders = faster builds!</p>
+          <p style="margin-top:4px; color:#f39c12">Salary: <span id="builder-salary">$55/day</span></p>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#95a5a6;margin-bottom:8px">Current builders:</div>
+        <div class="builder-list" id="builder-list">
+          <span style="font-size:12px;color:#666">No builders hired yet</span>
+        </div>
+      </div>
+      <button id="hire-btn">
+        👷 Hire Builder — $550
+      </button>
+      <div class="hire-terms">
+        One-time hiring fee: $550 · Daily salary: $55
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== INVEST PANEL ===== -->
+  <div id="invest-panel" class="panel hidden">
+    <div class="panel-header">
+      <h2>💼 Investment Center</h2>
+      <button class="close-btn" data-close="invest-panel">✕</button>
+    </div>
+    <div id="invest-content">
+      <!-- Filled dynamically by UI.updateInvestPanel() -->
+    </div>
+  </div>
+
+  <!-- ===== INFO PANEL ===== -->
+  <div id="info-panel" class="panel hidden">
+    <div class="panel-header">
+      <h2>📊 Park Statistics</h2>
+      <button class="close-btn" data-close="info-panel">✕</button>
+    </div>
+    <div id="info-content"></div>
+  </div>
+
+  <!-- Notifications -->
+  <div id="notifications"></div>
+
+</div>
+<script type="module" src="src/game.js"></script>
+</body>
+</html>
