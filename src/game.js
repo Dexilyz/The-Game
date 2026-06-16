@@ -18,6 +18,7 @@ class Game {
     this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping       = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.resize();
 
     this.scene  = new THREE.Scene();
@@ -67,9 +68,9 @@ class Game {
 
   // ── Scene setup ──────────────────────────────────────────────────────────
   _setupLights() {
-    this.scene.add(new THREE.AmbientLight(0x90c0ff, 0.6));
+    this.scene.add(new THREE.HemisphereLight(0x87ceeb, 0x4a7c33, 0.9));
 
-    const sun = new THREE.DirectionalLight(0xfff5d0, 1.4);
+    const sun = new THREE.DirectionalLight(0xfffaee, 2.0);
     sun.position.set(30, 60, 20);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -92,7 +93,7 @@ class Game {
     const W = GRID_W * T3D, H = GRID_H * T3D;
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(W, H),
-      new THREE.MeshLambertMaterial({ color: 0x7ec850 })
+      new THREE.MeshStandardMaterial({ color: 0x5a9e3a, roughness: 0.85 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(W / 2, 0, H / 2);
@@ -105,7 +106,7 @@ class Game {
         if ((gx + gy) % 2 === 0) continue;
         const sq = new THREE.Mesh(
           new THREE.PlaneGeometry(T3D - 0.06, T3D - 0.06),
-          new THREE.MeshLambertMaterial({ color: 0x6ab540 })
+          new THREE.MeshStandardMaterial({ color: 0x4d8a2e, roughness: 0.88 })
         );
         sq.rotation.x = -Math.PI / 2;
         sq.position.set(gx * T3D + T3D / 2, 0.005, gy * T3D + T3D / 2);
