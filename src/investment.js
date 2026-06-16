@@ -28,7 +28,10 @@ export class InvestmentSystem {
     const ey   = (park.entranceY + 1) * 56;
     const inv  = new Investor(ex * 56 + 28, ey + 100, type, this.game);
     this.pending.push(inv);
-    this.game.ui.notify(`💼 ${type.name} wants to meet you! Check the Investment panel.`, 'invest');
+    const deal = { invId: inv.id, name: type.name, avatar: type.avatar, desc: type.desc, daysLeft: type.days };
+    this.game.ui.notify(`${type.avatar} ${type.name} хочет встретиться! Открой раздел Инвестор.`, 'invest');
+    // Auto-open modal after short delay
+    setTimeout(() => { if (this.game.ui) this.game.ui.updateInvestSheet(); }, 1500);
   }
 
   getAvailableDeals() {

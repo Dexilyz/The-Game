@@ -1,243 +1,281 @@
-import { ATTRACTIONS, BUILDER_COST, BUILDER_SAL, PATH_COST } from './data.js';
+import { ATTRACTIONS, BUILDER_SAL, BUILDER_COST, PATH_COST } from './data.js';
 import { fmt$ } from './utils.js';
 
 export class UI {
   constructor(game) {
     this.game   = game;
-    this.notifs = [];
+    this._ntfs  = [];
+    this._pendingDeal = null;
     this._buildDOM();
     this._bindEvents();
   }
 
   _buildDOM() {
-    document.getElementById('attraction-grid').innerHTML =
+    document.getElementById('build-list').innerHTML =
       Object.values(ATTRACTIONS).map(a => `
-        <div class="attr-card" data-id="${a.id}" data-cost="${a.cost}">
-          <div class="attr-emoji">${a.emoji}</div>
-          <div class="attr-name">${a.name}</div>
-          <div class="attr-cost">${fmt$(a.cost)}</div>
-          <div class="attr-size">${a.size[0]}×${a.size[1]} tiles • ${a.buildersNeeded} worker${a.buildersNeeded > 1 ? 's' : ''}</div>
-          <div class="attr-desc">${a.desc}</div>
-          <div class="attr-income">+${fmt$(a.incomePerVisit)}/visit</div>
+        <div class="ac" data-id="${a.id}">
+          <div class="ac-ico">${a.emoji}</div>
+          <div class="ac-name">${a.name}</div>
+          <div class="ac-cost">${fmt$(a.cost)}</div>
+          <div class="ac-size">${a.size[0]}×${a.size[1]} тайла · ${a.buildersNeeded} рабочих</div>
+          <div class="ac-desc">${a.desc}</div>
+          <div class="ac-inc">+${fmt$(a.incomePerVisit)}/визит</div>
         </div>
       `).join('');
   }
 
   _bindEvents() {
     // Toolbar buttons
-    document.querySelectorAll('.tool-btn').forEach(btn => {
+    document.querySelectorAll('.tb').forEach(btn => {
       btn.addEventListener('click', () => {
-        const action = btn.dataset.action;
-        this.game.onToolAction(action);
+        const p = btn.dataset.p;
+        document.querySelectorAll('.tb').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this._onToolbar(p);
       });
     });
 
-    // Close panel buttons
-    document.querySelectorAll('.close-btn').forEach(btn => {
+    // Close sheet buttons
+    document.querySelectorAll('.xbtn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const panelId = btn.dataset.close;
-        document.getElementById(panelId).classList.add('hidden');
-        if (this.game.mode === 'build' || this.game.mode === 'path') {
-          this.game.mode = 'normal';
-          this.game.selectedBuild = null;
-        }
+        const id = btn.dataset.sh;
+        if (id) document.getElementById(id).classList.add('hidden');
+        this.game.mode = 'normal';
+        this.game.selectedBuild = null;
+        document.getElementById('modebar').classList.add('hidden');
+        document.querySelectorAll('.tb').forEach(b => b.classList.remove('active'));
       });
     });
 
-    // Attraction cards
-    document.getElementById('attraction-grid').addEventListener('click', e => {
-      const card = e.target.closest('.attr-card');
+    // Build attraction click
+    document.getElementById('build-list').addEventListener('click', e => {
+      const card = e.target.closest('.ac');
       if (!card) return;
-      const id = card.dataset.id;
+      const id  = card.dataset.id;
       const def = ATTRACTIONS[id];
       if (!this.game.economy.canAfford(def.cost)) {
-        this.notify(`❌ Not enough money! Need ${fmt$(def.cost)}`, 'error');
-        return;
+        this.notify(`❌ Нужно ${fmt$(def.cost)}`, 'error'); return;
       }
-      document.querySelectorAll('.attr-card').forEach(c => c.classList.remove('selected'));
-      card.classList.add('selected');
-      this.game.selectedBuild = id;
-      this.game.mode = 'build';
-      document.getElementById('build-panel').classList.add('hidden');
-      this.notify(`📍 Click on the park to place ${def.name}`, 'info');
+      document.querySelectorAll('.ac').forEach(c => c.classList.remove('sel'));
+      card.classList.add('sel');
+      this.game.selectedBuild  = id;
+      this.game.mode           = 'build';
+      document.getElementById('sh-build').classList.add('hidden');
+      const mbar = document.getElementById('modebar');
+      mbar.classList.remove('hidden');
+      document.getElementById('modetext').textContent = `📍 Выберите место для ${def.name}`;
     });
 
-    // Hire builder button
+    // Hire
     document.getElementById('hire-btn').addEventListener('click', () => {
       this.game.onHireBuilder();
+      this._updateHirePanel();
     });
 
-    // Investment buttons (delegated)
-    document.getElementById('invest-content').addEventListener('click', e => {
-      const acceptBtn = e.target.closest('.accept-btn');
-      const declineBtn = e.target.closest('.decline-btn');
-      if (acceptBtn) this.game.investment.acceptDeal(acceptBtn.dataset.id);
-      if (declineBtn) this.game.investment.declineDeal(declineBtn.dataset.id);
-      if (acceptBtn || declineBtn) this.updateInvestPanel();
+    // Mode cancel
+    document.getElementById('modecancel').addEventListener('click', () => {
+      this.game.mode = 'normal';
+      this.game.selectedBuild = null;
+      document.getElementById('modebar').classList.add('hidden');
+      document.querySelectorAll('.tb').forEach(b => b.classList.remove('active'));
     });
 
-    // Speed buttons
-    document.querySelectorAll('.speed-btn').forEach(btn => {
+    // Speed
+    document.querySelectorAll('.sp').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.sp').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        this.game.gameSpeed = parseFloat(btn.dataset.speed);
+        this.game.gameSpeed = parseFloat(btn.dataset.spd);
       });
     });
 
-    // Touch/mouse on canvas (delegated to game)
-    window.addEventListener('resize', () => this.game.renderer.resize());
+    // Investor modal buttons
+    document.getElementById('inv-accept').addEventListener('click', () => {
+      if (!this._pendingDeal) return;
+      this.game.investment.acceptDeal(this._pendingDeal.invId);
+      this._pendingDeal = null;
+      document.getElementById('inv-modal').classList.add('hidden');
+      this.updateInvestSheet();
+    });
+    document.getElementById('inv-decline').addEventListener('click', () => {
+      if (!this._pendingDeal) return;
+      this.game.investment.declineDeal(this._pendingDeal.invId);
+      this._pendingDeal = null;
+      document.getElementById('inv-modal').classList.add('hidden');
+    });
+    document.getElementById('inv-backdrop').addEventListener('click', () => {
+      document.getElementById('inv-modal').classList.add('hidden');
+    });
+
+    // Resize
+    window.addEventListener('resize', () => this.game.resize());
+  }
+
+  _onToolbar(p) {
+    this.hideAll();
+    this.game.mode = 'normal';
+    this.game.selectedBuild = null;
+    document.getElementById('modebar').classList.add('hidden');
+    switch (p) {
+      case 'build':
+        this.showSheet('sh-build');
+        break;
+      case 'path':
+        this.game.mode = 'path';
+        document.getElementById('modebar').classList.remove('hidden');
+        document.getElementById('modetext').textContent = `🛤 Нажмите на траву, чтобы проложить дорожку ($${PATH_COST})`;
+        break;
+      case 'hire':
+        this._updateHirePanel();
+        this.showSheet('sh-hire');
+        break;
+      case 'invest':
+        this.updateInvestSheet();
+        this.showSheet('sh-invest');
+        break;
+      case 'stats':
+        this.game.showStats();
+        break;
+    }
+  }
+
+  _updateHirePanel() {
+    const blist = document.getElementById('blist');
+    if (!blist) return;
+    if (this.game.builders.length === 0) {
+      blist.innerHTML = '<span style="font-size:12px;color:#666;padding:4px">Строителей нет</span>';
+    } else {
+      blist.innerHTML = this.game.builders.map((b, i) =>
+        `<div class="bbadge">👷 Строитель ${i + 1} — ${b.state === 'building' ? '🔨 строит' : b.state === 'idle' ? '💤 ждёт' : '🚶 идёт'}</div>`
+      ).join('');
+    }
   }
 
   update() {
-    const eco = this.game.economy;
+    const eco  = this.game.economy;
     const park = this.game.park;
-
-    document.getElementById('money-display').textContent  = fmt$(eco.money);
-    document.getElementById('day-display').textContent    = `Day ${eco.day}`;
-    document.getElementById('visitor-display').textContent = park.totalVisitors;
-    document.getElementById('builder-display').textContent = this.game.builders.length;
-
-    // Star rating
-    const stars = '⭐'.repeat(eco.rating) + '☆'.repeat(5 - eco.rating);
-    document.getElementById('rating-display').textContent = stars;
-
-    // Day progress bar
-    const progress = document.getElementById('day-progress');
-    if (progress) progress.style.width = (eco.dayProgress * 100) + '%';
-
-    // Visitor count color (red if low)
-    const visEl = document.getElementById('visitor-display');
-    visEl.style.color = this.game.visitors.length > 5 ? '#2ecc71' : '#e74c3c';
-
-    // Money color
-    const moneyEl = document.getElementById('money-display');
-    moneyEl.style.color = eco.money < 1000 ? '#e74c3c' : '#f1c40f';
-
-    // Update hire panel info
-    const salEl = document.getElementById('builder-salary');
-    if (salEl) salEl.textContent = fmt$(BUILDER_SAL) + '/day each';
-
-    // Update builder list
-    const listEl = document.getElementById('builder-list');
-    if (listEl) {
-      if (this.game.builders.length === 0) {
-        listEl.innerHTML = '<span style="font-size:12px;color:#666">No builders hired yet</span>';
-      } else {
-        listEl.innerHTML = this.game.builders
-          .map(b => `<div class="builder-badge">👷 ${b.app.name} — ${b.state}</div>`)
-          .join('');
-      }
-    }
-
-    // Notification cleanup
-    this.notifs = this.notifs.filter(n => n.alive);
+    document.getElementById('h-money').textContent   = `💰 ${fmt$(eco.money)}`;
+    document.getElementById('h-day').textContent     = `День ${eco.day}`;
+    document.getElementById('h-vis').textContent     = `👥 ${this.game.visitors.length}`;
+    document.getElementById('h-rating').textContent  = '⭐'.repeat(eco.rating) + '☆'.repeat(5 - eco.rating);
+    const fill = document.getElementById('dayfill');
+    if (fill) fill.style.width = (eco.dayProgress * 100) + '%';
+    this._ntfs = this._ntfs.filter(n => n.alive);
   }
 
-  updateInvestPanel() {
-    const deals = this.game.investment.getAvailableDeals();
+  updateInvestSheet() {
+    const deals  = this.game.investment.getAvailableDeals();
     const active = this.game.economy.investors;
-    const cont = document.getElementById('invest-content');
-
+    const rating = this.game.economy.rating;
+    const cont   = document.getElementById('invest-body');
     let html = '';
 
     if (active.length > 0) {
-      html += '<div class="invest-section"><h3>Active Investors</h3>';
-      for (const deal of active) {
-        html += `
-          <div class="investor-active">
-            <div class="inv-row">
-              <strong>${deal.name}</strong>
-              <span class="inv-equity">${deal.equity}% equity</span>
-            </div>
-            <div class="inv-row">
-              <span>Invested: ${fmt$(deal.amount)}</span>
-              <span>${deal.daysLeft} days left</span>
-            </div>
-            <div class="invest-bar"><div class="invest-fill" style="width:${Math.min(100, (deal.daysLeft / 90) * 100)}%"></div></div>
-          </div>`;
+      html += '<div class="isec"><h3>Активные инвесторы</h3>';
+      for (const d of active) {
+        html += `<div class="i-active">
+          <div class="irow"><strong>${d.name}</strong><span style="color:var(--red);font-weight:700">${d.equity}% доли</span></div>
+          <div class="irow"><span>Вложено: ${fmt$(d.amount)}</span><span>${d.daysLeft} дней осталось</span></div>
+          <div class="ibar"><div class="ibarf" style="width:${Math.min(100,(d.daysLeft/90)*100)}%"></div></div>
+        </div>`;
       }
       html += '</div>';
     }
 
     if (deals.length > 0) {
-      html += '<div class="invest-section"><h3>Available Investors</h3>';
+      html += '<div class="isec"><h3>Доступные предложения</h3>';
       for (const d of deals) {
-        html += `
-          <div class="investor-card">
-            <div class="inv-header">
-              <span class="inv-avatar">${d.avatar}</span>
-              <div>
-                <div class="inv-name">${d.name}</div>
-                <div class="inv-desc">${d.desc}</div>
-              </div>
-            </div>
-            <div class="inv-terms">
-              <div class="inv-term">
-                <span class="term-label">Invests</span>
-                <span class="term-val green">${fmt$(d.amount)}</span>
-              </div>
-              <div class="inv-term">
-                <span class="term-label">Takes</span>
-                <span class="term-val red">${d.equity}% income</span>
-              </div>
-              <div class="inv-term">
-                <span class="term-label">Duration</span>
-                <span class="term-val">${d.daysLeft} days</span>
-              </div>
-            </div>
-            <div class="inv-actions">
-              <button class="accept-btn" data-id="${d.invId}">✅ Accept Deal</button>
-              <button class="decline-btn" data-id="${d.invId}">❌ Decline</button>
-            </div>
-          </div>`;
+        html += `<div class="i-card">
+          <div class="i-head">
+            <div class="i-ava">${d.avatar}</div>
+            <div><div class="i-nm">${d.name}</div><div class="i-ds">${d.desc}</div></div>
+          </div>
+          <div class="inv-terms">
+            <div class="iterm"><span class="it-lbl">Инвестиция</span><div class="it-val green">${fmt$(d.amount)}</div></div>
+            <div class="iterm"><span class="it-lbl">Доля</span><div class="it-val red">${d.equity}%</div></div>
+            <div class="iterm"><span class="it-lbl">Срок</span><div class="it-val">${d.daysLeft} дн.</div></div>
+          </div>
+          <div class="inv-actions">
+            <button class="btn-acpt" data-id="${d.invId}">✓ Принять</button>
+            <button class="btn-dcln" data-id="${d.invId}">Отказать</button>
+          </div>
+        </div>`;
       }
       html += '</div>';
     }
 
     if (deals.length === 0 && active.length === 0) {
-      const rating = this.game.economy.rating;
-      html = `
-        <div class="invest-empty">
-          <div class="invest-empty-icon">💼</div>
-          <h3>No Investors Yet</h3>
-          <p>Grow your park to attract investors!</p>
-          <div class="requirements">
-            <div class="req ${rating >= 2 ? 'met' : ''}">⭐⭐ 2-star rating → Angel investors</div>
-            <div class="req ${rating >= 3 ? 'met' : ''}">⭐⭐⭐ 3-star rating → Venture capital</div>
-            <div class="req ${rating >= 4 ? 'met' : ''}">⭐⭐⭐⭐ 4-star rating → Corporate deals</div>
-          </div>
-        </div>`;
+      html = `<div class="i-empty">
+        <div class="i-empty-ico">💼</div>
+        <h3>Инвесторов нет</h3>
+        <p>Развивай парк — инвесторы придут сами!</p>
+        <div class="reqs">
+          <div class="req ${rating >= 1 ? 'met' : ''}">⭐ 1 звезда → Первые инвесторы</div>
+          <div class="req ${rating >= 2 ? 'met' : ''}">⭐⭐ 2 звезды + 50 посетителей → Венчур</div>
+          <div class="req ${rating >= 3 ? 'met' : ''}">⭐⭐⭐ 3 звезды + 200 посетителей → Корпорации</div>
+        </div>
+      </div>`;
     }
-
     cont.innerHTML = html;
+
+    // Bind new buttons
+    cont.querySelectorAll('.btn-acpt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const d  = deals.find(x => x.invId === id);
+        if (d) this.openInvestorModal(d);
+      });
+    });
+    cont.querySelectorAll('.btn-dcln').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.game.investment.declineDeal(btn.dataset.id);
+        this.updateInvestSheet();
+      });
+    });
+  }
+
+  openInvestorModal(deal) {
+    this._pendingDeal = deal;
+    document.getElementById('inv-ava').textContent    = deal.avatar;
+    document.getElementById('inv-badge').textContent  = deal.name.toUpperCase();
+    document.getElementById('inv-name').textContent   = deal.name;
+    document.getElementById('inv-desc').textContent   = deal.desc;
+    document.getElementById('iv-amount').textContent  = fmt$(deal.amount);
+    document.getElementById('iv-equity').textContent  = deal.equity + '% дохода';
+    document.getElementById('iv-days').textContent    = deal.daysLeft + ' дней';
+    document.getElementById('inv-modal').classList.remove('hidden');
+  }
+
+  // Called from investment system when new investor arrives
+  onInvestorArrived(deal) {
+    this.notify(`💼 ${deal.name} хочет встретиться! Открой раздел Инвестор.`, 'invest');
+    // Auto-open modal after 2s if panel not already open
+    setTimeout(() => {
+      if (!document.getElementById('sh-invest').classList.contains('hidden')) {
+        this.updateInvestSheet();
+      }
+    }, 2000);
   }
 
   notify(text, type = 'info') {
     const el = document.createElement('div');
     el.className = `notif notif-${type}`;
     el.textContent = text;
-    document.getElementById('notifications').appendChild(el);
-
+    document.getElementById('notifs').appendChild(el);
     const n = { el, alive: true };
-    this.notifs.push(n);
-
+    this._ntfs.push(n);
     setTimeout(() => {
       el.classList.add('fade-out');
-      setTimeout(() => {
-        el.remove();
-        n.alive = false;
-      }, 500);
+      setTimeout(() => { el.remove(); n.alive = false; }, 450);
     }, 3500);
   }
 
-  showPanel(id) {
-    document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
-    document.getElementById(id).classList.remove('hidden');
-    if (id === 'invest-panel') this.updateInvestPanel();
+  showSheet(id) {
+    document.querySelectorAll('.sheet').forEach(s => s.classList.add('hidden'));
+    document.getElementById(id)?.classList.remove('hidden');
   }
 
   hideAll() {
-    document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.sheet').forEach(s => s.classList.add('hidden'));
   }
 }

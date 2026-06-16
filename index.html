@@ -2,134 +2,140 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,maximum-scale=1,viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>🎡 Park Tycoon</title>
+  <title>🎡 Park Tycoon 3D</title>
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js" } }
+  </script>
 </head>
 <body>
 <div id="app">
+  <canvas id="c"></canvas>
 
-  <!-- Game canvas -->
-  <canvas id="gameCanvas"></canvas>
-
-  <!-- HUD top bar -->
-  <div id="hud">
-    <div id="stats-bar">
-      <div class="stat money">
-        <span class="icon">💰</span>
-        <span id="money-display">$6,000</span>
-      </div>
-      <div class="stat day">
-        <span class="icon">📅</span>
-        <span id="day-display">Day 1</span>
-      </div>
-      <div class="stat">
-        <span id="rating-display">⭐☆☆☆☆</span>
-      </div>
-      <div class="stat">
-        <span class="icon">👥</span>
-        <span id="visitor-display">0</span>
-      </div>
-      <div class="stat">
-        <span class="icon">👷</span>
-        <span id="builder-display">0</span>
-      </div>
-      <div id="day-progress-wrap">
-        <div id="day-progress"></div>
-      </div>
+  <!-- HUD -->
+  <header id="hud">
+    <div class="chip" id="h-money">💰 $6,000</div>
+    <div id="hud-mid">
+      <div id="daybar"><div id="dayfill"></div></div>
+      <div class="chip" id="h-day">День 1</div>
     </div>
-  </div>
-
-  <!-- Speed controls -->
-  <div class="speed-controls">
-    <button class="speed-btn active" data-speed="1">1×</button>
-    <button class="speed-btn" data-speed="2">2×</button>
-    <button class="speed-btn" data-speed="3">3×</button>
-  </div>
-
-  <!-- Bottom toolbar -->
-  <div id="toolbar">
-    <button class="tool-btn" data-action="build">
-      <span>🔨</span><small>Build</small>
-    </button>
-    <button class="tool-btn" data-action="path">
-      <span>🛤️</span><small>Path</small>
-    </button>
-    <button class="tool-btn" data-action="hire">
-      <span>👷</span><small>Hire</small>
-    </button>
-    <button class="tool-btn" data-action="invest">
-      <span>💼</span><small>Invest</small>
-    </button>
-    <button class="tool-btn" data-action="info">
-      <span>📊</span><small>Stats</small>
-    </button>
-  </div>
-
-  <!-- ===== BUILD PANEL ===== -->
-  <div id="build-panel" class="panel hidden">
-    <div class="panel-header">
-      <h2>🔨 Build Attraction</h2>
-      <button class="close-btn" data-close="build-panel">✕</button>
+    <div id="hud-right">
+      <div class="chip" id="h-rating">⭐</div>
+      <div class="chip" id="h-vis">👥 0</div>
     </div>
-    <div id="attraction-grid"></div>
+  </header>
+
+  <!-- Speed -->
+  <div id="speeds">
+    <button class="sp active" data-spd="1">1×</button>
+    <button class="sp" data-spd="2">2×</button>
+    <button class="sp" data-spd="3">3×</button>
   </div>
 
-  <!-- ===== HIRE PANEL ===== -->
-  <div id="hire-panel" class="panel hidden">
-    <div class="panel-header">
-      <h2>👷 Hire Workers</h2>
-      <button class="close-btn" data-close="hire-panel">✕</button>
-    </div>
-    <div class="hire-content">
-      <div class="hire-status">
-        <div class="hire-avatar">👷</div>
-        <div class="hire-info">
-          <h3>Construction Crew</h3>
-          <p>Builders construct attractions and upgrades. More builders = faster builds!</p>
-          <p style="margin-top:4px; color:#f39c12">Salary: <span id="builder-salary">$55/day</span></p>
+  <!-- Mode bar -->
+  <div id="modebar" class="hidden">
+    <span id="modetext">Выберите место</span>
+    <button id="modecancel">✕ Отмена</button>
+  </div>
+
+  <!-- Toolbar -->
+  <nav id="toolbar">
+    <button class="tb" data-p="build">
+      <div class="tb-ico">🔨</div>
+      <div class="tb-lbl">Строить</div>
+    </button>
+    <button class="tb" data-p="path">
+      <div class="tb-ico">🛤</div>
+      <div class="tb-lbl">Дорожка</div>
+    </button>
+    <button class="tb" data-p="hire">
+      <div class="tb-ico">👷</div>
+      <div class="tb-lbl">Нанять</div>
+    </button>
+    <button class="tb" data-p="invest">
+      <div class="tb-ico">💼</div>
+      <div class="tb-lbl">Инвестор</div>
+    </button>
+    <button class="tb" data-p="stats">
+      <div class="tb-ico">📊</div>
+      <div class="tb-lbl">Стат</div>
+    </button>
+  </nav>
+
+  <!-- SHEET: Build -->
+  <div class="sheet hidden" id="sh-build">
+    <div class="shandle"></div>
+    <div class="sh-head"><h2>🔨 Построить</h2><button class="xbtn" data-sh="sh-build">✕</button></div>
+    <div id="build-list"></div>
+  </div>
+
+  <!-- SHEET: Hire -->
+  <div class="sheet hidden" id="sh-hire">
+    <div class="shandle"></div>
+    <div class="sh-head"><h2>👷 Строители</h2><button class="xbtn" data-sh="sh-hire">✕</button></div>
+    <div class="sh-body">
+      <div class="hire-card">
+        <div class="hire-ico">👷</div>
+        <div>
+          <div class="hire-title">Команда строителей</div>
+          <div class="hire-sub">Строят аттракционы. Больше строителей — быстрее стройка!</div>
+          <div class="hire-cost" id="hire-sal">Зарплата: $55/день</div>
         </div>
       </div>
-      <div>
-        <div style="font-size:12px;color:#95a5a6;margin-bottom:8px">Current builders:</div>
-        <div class="builder-list" id="builder-list">
-          <span style="font-size:12px;color:#666">No builders hired yet</span>
+      <div id="blist"></div>
+      <button id="hire-btn">👷 Нанять строителя — $550</button>
+      <div class="hire-note">Разовый взнос $550 · Зарплата $55/день</div>
+    </div>
+  </div>
+
+  <!-- SHEET: Invest -->
+  <div class="sheet hidden" id="sh-invest">
+    <div class="shandle"></div>
+    <div class="sh-head"><h2>💼 Инвестиции</h2><button class="xbtn" data-sh="sh-invest">✕</button></div>
+    <div id="invest-body"></div>
+  </div>
+
+  <!-- SHEET: Stats -->
+  <div class="sheet hidden" id="sh-stats">
+    <div class="shandle"></div>
+    <div class="sh-head"><h2>📊 Статистика</h2><button class="xbtn" data-sh="sh-stats">✕</button></div>
+    <div id="stats-body"></div>
+  </div>
+
+  <!-- INVESTOR MODAL -->
+  <div id="inv-modal" class="hidden">
+    <div id="inv-backdrop"></div>
+    <div id="inv-card">
+      <div id="inv-glow"></div>
+      <div id="inv-ava"></div>
+      <div id="inv-badge-wrap"><span id="inv-badge"></span></div>
+      <h3 id="inv-name"></h3>
+      <p id="inv-desc"></p>
+      <div class="inv-terms">
+        <div class="iterm">
+          <div class="it-lbl">Инвестиция</div>
+          <div class="it-val green" id="iv-amount"></div>
+        </div>
+        <div class="iterm">
+          <div class="it-lbl">Доля дохода</div>
+          <div class="it-val red" id="iv-equity"></div>
+        </div>
+        <div class="iterm">
+          <div class="it-lbl">Срок</div>
+          <div class="it-val" id="iv-days"></div>
         </div>
       </div>
-      <button id="hire-btn">
-        👷 Hire Builder — $550
-      </button>
-      <div class="hire-terms">
-        One-time hiring fee: $550 · Daily salary: $55
+      <div class="inv-btns">
+        <button class="btn-decline" id="inv-decline">Отказать</button>
+        <button class="btn-accept" id="inv-accept">✓ Принять сделку</button>
       </div>
     </div>
   </div>
 
-  <!-- ===== INVEST PANEL ===== -->
-  <div id="invest-panel" class="panel hidden">
-    <div class="panel-header">
-      <h2>💼 Investment Center</h2>
-      <button class="close-btn" data-close="invest-panel">✕</button>
-    </div>
-    <div id="invest-content">
-      <!-- Filled dynamically by UI.updateInvestPanel() -->
-    </div>
-  </div>
-
-  <!-- ===== INFO PANEL ===== -->
-  <div id="info-panel" class="panel hidden">
-    <div class="panel-header">
-      <h2>📊 Park Statistics</h2>
-      <button class="close-btn" data-close="info-panel">✕</button>
-    </div>
-    <div id="info-content"></div>
-  </div>
-
-  <!-- Notifications -->
-  <div id="notifications"></div>
-
+  <!-- NOTIFICATIONS -->
+  <div id="notifs"></div>
 </div>
 <script type="module" src="src/game.js"></script>
 </body>
