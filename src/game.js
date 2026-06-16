@@ -149,12 +149,6 @@ class Game {
     this.ui.update();
   }
 
-  _animateAttractions() {
-    for (const attr of this.park.attractions.values()) {
-      if (attr.mesh) animateAttraction(attr.mesh, arguments[0], attr.state);
-    }
-  }
-
   _animateAttractions(dt) {
     for (const attr of this.park.attractions.values()) {
       if (attr.mesh) animateAttraction(attr.mesh, dt, attr.state);

@@ -1,4 +1,4 @@
-import { TILE, GRID_W, GRID_H, SKIN_TONES, HAIR_COLORS, SHIRT_COLS, PANT_COLS, BUILDER_SPD, BUILDER_RATE, ATTRACTIONS } from './data.js';
+import { TILE, GRID_W, GRID_H, SKIN_TONES, HAIR_COLORS, SHIRT_COLS, PANT_COLS, BUILDER_SPD, ATTRACTIONS } from './data.js';
 import { uid, pick, rnd, rndInt, aStar, dist, lerp } from './utils.js';
 
 // ---- Base Character ----
