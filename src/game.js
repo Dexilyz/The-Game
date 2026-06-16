@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js';
 import { Park }             from './park.js';
 import { Economy }          from './economy.js';
 import { InvestmentSystem } from './investment.js';
