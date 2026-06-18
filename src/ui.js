@@ -1,4 +1,4 @@
-import { ATTRACTIONS, BUILDER_SAL, BUILDER_COST, PATH_COST } from './data.js';
+import { ATTRACTIONS, BUILDER_SAL, BUILDER_COST, PATH_COST, BUILD_DEPOSIT_FRAC, MAX_LEVEL, UPGRADE_COST_MULT } from './data.js';
 import { fmt$ } from './utils.js';
 
 export class UI {
@@ -53,8 +53,9 @@ export class UI {
       if (!card) return;
       const id  = card.dataset.id;
       const def = ATTRACTIONS[id];
-      if (!this.game.economy.canAfford(def.cost)) {
-        this.notify(`❌ Нужно ${fmt$(def.cost)}`, 'error'); return;
+      const deposit = Math.round(def.cost * BUILD_DEPOSIT_FRAC);
+      if (!this.game.economy.canAfford(deposit)) {
+        this.notify(`❌ Нужно ${fmt$(deposit)} (залог)`, 'error'); return;
       }
       document.querySelectorAll('.ac').forEach(c => c.classList.remove('sel'));
       card.classList.add('sel');
@@ -69,6 +70,10 @@ export class UI {
     // Hire
     document.getElementById('hire-btn').addEventListener('click', () => {
       this.game.onHireBuilder();
+      this._updateHirePanel();
+    });
+    document.getElementById('staff-btn').addEventListener('click', () => {
+      this.game.onHireStaff();
       this._updateHirePanel();
     });
 
@@ -107,6 +112,46 @@ export class UI {
       document.getElementById('inv-modal').classList.add('hidden');
     });
 
+    // Build confirmation modal
+    document.getElementById('bc-confirm').addEventListener('click', () => {
+      if (!this._pendingBuild) return;
+      const { gx, gy, typeId } = this._pendingBuild;
+      const attr = this.game.park.placeAttraction(gx, gy, typeId);
+      if (!attr) this.notify('❌ Не удалось построить', 'error');
+      this._pendingBuild = null;
+      document.getElementById('build-modal').classList.add('hidden');
+      this.game.mode = 'normal';
+      this.game.selectedBuild = null;
+      document.getElementById('modebar').classList.add('hidden');
+      document.querySelectorAll('.tb').forEach(b => b.classList.remove('active'));
+    });
+    document.getElementById('bc-cancel').addEventListener('click', () => {
+      this._pendingBuild = null;
+      document.getElementById('build-modal').classList.add('hidden');
+    });
+    document.getElementById('build-backdrop').addEventListener('click', () => {
+      this._pendingBuild = null;
+      document.getElementById('build-modal').classList.add('hidden');
+    });
+
+    // Attraction info / upgrade modal
+    document.getElementById('ac-upgrade').addEventListener('click', () => {
+      if (!this._pendingAttrId) return;
+      if (this.game.park.upgradeAttraction(this._pendingAttrId)) {
+        this.showAttrInfo(this._pendingAttrId);
+      } else {
+        this.notify('❌ Нельзя улучшить (нет денег или макс. уровень)', 'error');
+      }
+    });
+    document.getElementById('ac-close').addEventListener('click', () => {
+      this._pendingAttrId = null;
+      document.getElementById('attr-modal').classList.add('hidden');
+    });
+    document.getElementById('attr-backdrop').addEventListener('click', () => {
+      this._pendingAttrId = null;
+      document.getElementById('attr-modal').classList.add('hidden');
+    });
+
     // Resize
     window.addEventListener('resize', () => this.game.resize());
   }
@@ -141,14 +186,61 @@ export class UI {
 
   _updateHirePanel() {
     const blist = document.getElementById('blist');
-    if (!blist) return;
-    if (this.game.builders.length === 0) {
-      blist.innerHTML = '<span style="font-size:12px;color:#666;padding:4px">Строителей нет</span>';
-    } else {
-      blist.innerHTML = this.game.builders.map((b, i) =>
-        `<div class="bbadge">👷 Строитель ${i + 1} — ${b.state === 'building' ? '🔨 строит' : b.state === 'idle' ? '💤 ждёт' : '🚶 идёт'}</div>`
-      ).join('');
+    if (blist) {
+      if (this.game.builders.length === 0) {
+        blist.innerHTML = '<span style="font-size:12px;color:#666;padding:4px">Строителей нет</span>';
+      } else {
+        blist.innerHTML = this.game.builders.map((b, i) =>
+          `<div class="bbadge">👷 Строитель ${i + 1} — ${b.state === 'building' ? '🔨 строит' : b.state === 'idle' ? '💤 ждёт' : '🚶 идёт'}</div>`
+        ).join('');
+      }
     }
+    const slist = document.getElementById('stafflist');
+    if (slist) {
+      if (this.game.staff.length === 0) {
+        slist.innerHTML = '<span style="font-size:12px;color:#666;padding:4px">Сотрудников нет</span>';
+      } else {
+        slist.innerHTML = this.game.staff.map((s, i) =>
+          `<div class="bbadge">🧑‍💼 Сотрудник ${i + 1} — ${s.state === 'working' ? '⚙️ работает' : s.state === 'idle' ? '💤 ждёт' : '🚶 идёт'}</div>`
+        ).join('');
+      }
+    }
+  }
+
+  showBuildConfirm(gx, gy, typeId) {
+    const def = ATTRACTIONS[typeId];
+    if (!def) return;
+    this._pendingBuild = { gx, gy, typeId };
+    document.getElementById('bc-ico').textContent  = def.emoji;
+    document.getElementById('bc-name').textContent = def.name;
+    document.getElementById('bc-desc').textContent = def.desc;
+    document.getElementById('bc-cost').textContent  = fmt$(def.cost);
+    document.getElementById('bc-deposit').textContent = fmt$(Math.round(def.cost * BUILD_DEPOSIT_FRAC));
+    document.getElementById('bc-size').textContent = `${def.size[0]}×${def.size[1]}`;
+    document.getElementById('build-modal').classList.remove('hidden');
+  }
+
+  showAttrInfo(attrId) {
+    const attr = this.game.park.attractions.get(attrId);
+    if (!attr) return;
+    const def = ATTRACTIONS[attr.typeId];
+    this._pendingAttrId = attrId;
+    const level = attr.level || 1;
+    document.getElementById('ac-ico').textContent   = def.emoji;
+    document.getElementById('ac-name').textContent  = def.name;
+    document.getElementById('ac-level').textContent = `${level} / ${MAX_LEVEL}`;
+    document.getElementById('ac-earned').textContent = fmt$(Math.round(attr.totalEarned || 0));
+    document.getElementById('ac-staff').textContent = attr.staffId ? '✅ есть' : '— нет';
+    const upBtn = document.getElementById('ac-upgrade');
+    if (level >= MAX_LEVEL) {
+      upBtn.textContent = 'Макс. уровень';
+      upBtn.disabled = true;
+    } else {
+      const cost = Math.round(def.cost * UPGRADE_COST_MULT[level - 1]);
+      upBtn.textContent = `⬆️ Улучшить — ${fmt$(cost)}`;
+      upBtn.disabled = false;
+    }
+    document.getElementById('attr-modal').classList.remove('hidden');
   }
 
   update() {

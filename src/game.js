@@ -3,9 +3,9 @@ import { Park }             from './park.js';
 import { Economy }          from './economy.js';
 import { InvestmentSystem } from './investment.js';
 import { UI }               from './ui.js';
-import { Visitor, Builder } from './character.js';
-import { createVisitor, createBuilder, createInvestor, animateCharacter, animateAttraction, createAttractionModel } from './models.js';
-import { TILE, GRID_W, GRID_H, T3D, BUILDER_COST, BUILDER_SAL, MAX_BUILDERS, ATTRACTIONS, SKIN_TONES, HAIR_COLORS, SHIRT_COLS, PANT_COLS } from './data.js';
+import { Visitor, Builder, Staff } from './character.js';
+import { createVisitor, createBuilder, createInvestor, createStaff, animateCharacter, animateAttraction, createAttractionModel } from './models.js';
+import { TILE, GRID_W, GRID_H, T3D, BUILDER_COST, BUILDER_SAL, MAX_BUILDERS, STAFF_COST, STAFF_SAL, MAX_STAFF, ATTRACTIONS, SKIN_TONES, HAIR_COLORS, SHIRT_COLS, PANT_COLS } from './data.js';
 import { rnd, rndInt, fmt$, pick } from './utils.js';
 
 class Game {
@@ -42,6 +42,7 @@ class Game {
 
     this.visitors = [];
     this.builders = [];
+    this.staff    = [];
 
     // ── State ──
     this.mode          = 'normal';
@@ -91,6 +92,19 @@ class Game {
 
   _setupGround() {
     const W = GRID_W * T3D, H = GRID_H * T3D;
+
+    // Outer "wilderness" plane, much larger than the park itself, so the
+    // camera (even at its clamped extremes) never sees bare sky/void
+    // beyond the playable territory.
+    const outer = new THREE.Mesh(
+      new THREE.PlaneGeometry(W * 6, H * 6),
+      new THREE.MeshStandardMaterial({ color: 0x3f7a2c, roughness: 0.9 })
+    );
+    outer.rotation.x = -Math.PI / 2;
+    outer.position.set(W / 2, -0.02, H / 2);
+    outer.receiveShadow = true;
+    this.scene.add(outer);
+
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(W, H),
       new THREE.MeshStandardMaterial({ color: 0x5a9e3a, roughness: 0.85 })
@@ -117,6 +131,13 @@ class Game {
   }
 
   // ── Camera ───────────────────────────────────────────────────────────────
+  _clampCamTarget() {
+    const margin = T3D * 2;
+    const maxX = GRID_W * T3D - margin, maxZ = GRID_H * T3D - margin;
+    this.camTarget.x = Math.max(margin, Math.min(maxX, this.camTarget.x));
+    this.camTarget.z = Math.max(margin, Math.min(maxZ, this.camTarget.z));
+  }
+
   _updateCamera() {
     const pitch = 0.72; // radians from horizontal (~41 deg)
     const t = this.camTarget;
@@ -144,6 +165,7 @@ class Game {
     this.investment.update(dt);
     this._updateVisitors(dt, t);
     this._updateBuilders(dt, t);
+    this._updateStaff(dt, t);
     this._spawnVisitors(dt);
     this._animateAttractions(dt);
     this._updateInvestorModels(dt, t);
@@ -209,6 +231,25 @@ class Game {
     }
   }
 
+  _updateStaff(dt, t) {
+    for (const s of this.staff) {
+      s.update(dt, this);
+      if (s.mesh) {
+        const wx = (s.px / TILE) * T3D;
+        const wz = (s.py / TILE) * T3D;
+        s.mesh.position.x = wx;
+        s.mesh.position.z = wz;
+        const dx = s.px - (s.mesh.userData.lastPx || s.px);
+        const dz = s.py - (s.mesh.userData.lastPy || s.py);
+        if (Math.abs(dx) + Math.abs(dz) > 0.1) s.mesh.rotation.y = Math.atan2(dx, dz);
+        s.mesh.userData.lastPx = s.px;
+        s.mesh.userData.lastPy = s.py;
+        const walking = s.state === 'going' || s.state === 'returning';
+        animateCharacter(s.mesh, dt, walking, s.state === 'working');
+      }
+    }
+  }
+
   _updateInvestorModels(dt, t) {
     for (const inv of this.investment.pending) {
       if (!inv.mesh) {
@@ -237,9 +278,14 @@ class Game {
   _spawnVisitors(dt) {
     const open = this.park.getAttractionCount();
     if (open === 0) return;
-    const max  = Math.min(6 + open * 3, 45);
+    let bonus = 1;
+    for (const attr of this.park.getOpenAttractions()) {
+      const def = ATTRACTIONS[attr.typeId];
+      if (def.visitorBonus) bonus += def.visitorBonus;
+    }
+    const max  = Math.min(6 + open * 3, 45) * bonus;
     if (this.visitors.length >= max) return;
-    this._visSpawn += dt * (0.4 + open * 0.2);
+    this._visSpawn += dt * (0.4 + open * 0.2) * bonus;
     while (this._visSpawn >= 1) {
       this._visSpawn--;
       this._spawnOneVisitor();
@@ -304,6 +350,35 @@ class Game {
     this.ui.notify(`👷 Строитель нанят! (${this.builders.length}/${MAX_BUILDERS}) — $${BUILDER_SAL}/день`, 'success');
   }
 
+  onHireStaff() {
+    if (this.staff.length >= MAX_STAFF) {
+      this.ui.notify(`⚠️ Максимум ${MAX_STAFF} сотрудников`, 'warn'); return;
+    }
+    if (!this.economy.canAfford(STAFF_COST)) {
+      this.ui.notify(`❌ Нужно ${fmt$(STAFF_COST)} для найма`, 'error'); return;
+    }
+    this.economy.spend(STAFF_COST);
+    const ex = this.park.entranceX;
+    const ey = this.park.entranceY;
+    const px = ex * TILE + TILE / 2 + rnd(-10, 10);
+    const py = ey * TILE + TILE / 2;
+    const s  = new Staff(px, py, this);
+
+    const app = {
+      skin: pick(SKIN_TONES),
+      hair: pick(HAIR_COLORS),
+      vest: s.app.vest,
+      pants: '#1a1a2e',
+      acc: null,
+    };
+    s.app  = { ...s.app, ...app };
+    s.mesh = createStaff(app);
+    s.mesh.position.set((px / TILE) * T3D, 0, (py / TILE) * T3D);
+    this.scene.add(s.mesh);
+    this.staff.push(s);
+    this.ui.notify(`🧑‍💼 Сотрудник нанят! (${this.staff.length}/${MAX_STAFF}) — $${STAFF_SAL}/день`, 'success');
+  }
+
   // Called from park when attraction is placed to create 3D model
   onAttractionPlaced(attr) {
     const def = ATTRACTIONS[attr.typeId];
@@ -332,10 +407,45 @@ class Game {
       this.scene.remove(attr.progressBar);
       attr.progressBar = null;
     }
+    if (attr.mesh) {
+      attr.mesh.traverse(c => { if (c.isMesh) c.visible = true; });
+      attr.mesh.scale.y = 1;
+    }
   }
 
-  onPathPlaced(gx, gy, mesh) {
-    this.scene.add(mesh);
+  // Reveal the building's parts gradually as construction progresses —
+  // children were ordered bottom-up when modeled, so revealing them in
+  // order makes the facade visibly rise rather than popping in at once.
+  onAttractionProgress(attr) {
+    if (!attr.mesh) return;
+    const parts = attr.mesh.children.filter(c => c.isMesh || c.isGroup);
+    if (!attr.mesh.userData.partsSorted) {
+      parts.sort((a, b) => a.position.y - b.position.y);
+      attr.mesh.userData.partsSorted = true;
+      attr.mesh.userData.parts = parts;
+    }
+    const ordered = attr.mesh.userData.parts || parts;
+    const visibleCount = Math.max(1, Math.round(ordered.length * attr.progress));
+    ordered.forEach((c, i) => { c.visible = i < visibleCount; });
+    attr.mesh.scale.y = 0.15 + attr.progress * 0.85;
+  }
+
+  onAttractionUpgraded(attr) {
+    if (!attr.mesh) return;
+    const s = attr.mesh.scale;
+    const pulse = () => {
+      let t = 0;
+      const dur = 0.4;
+      const step = () => {
+        t += 1 / 60;
+        const k = Math.min(1, t / dur);
+        const bump = 1 + Math.sin(k * Math.PI) * 0.12;
+        s.set(bump, bump, bump);
+        if (k < 1) requestAnimationFrame(step); else s.set(1, 1, 1);
+      };
+      step();
+    };
+    pulse();
   }
 
   // ── Build mode tile selection ─────────────────────────────────────────────
@@ -352,12 +462,18 @@ class Game {
   _handleTap(sx, sy) {
     const { gx, gy } = this._getGroundTile(sx, sy);
     if (this.mode === 'build' && this.selectedBuild) {
-      const attr = this.park.placeAttraction(gx, gy, this.selectedBuild);
-      if (!attr) this.ui.notify('❌ Нельзя построить здесь', 'error');
+      if (!this.park.canPlace(gx, gy, this.selectedBuild)) {
+        this.ui.notify('❌ Нельзя построить здесь', 'error');
+        return;
+      }
+      this.ui.showBuildConfirm(gx, gy, this.selectedBuild);
     } else if (this.mode === 'path') {
       if (!this.park.placePath(gx, gy)) {
         this.ui.notify('❌ Нельзя или нет денег', 'error');
       }
+    } else if (this.mode === 'normal') {
+      const attr = this.park.attrAt(gx, gy);
+      if (attr && attr.state === 'open') this.ui.showAttrInfo(attr.id);
     }
   }
 
@@ -420,6 +536,7 @@ class Game {
           const f = this.camDist / 35;
           this.camTarget.x = camStart.x - dx * 0.05 * f;
           this.camTarget.z = camStart.z - dy * 0.05 * f;
+          this._clampCamTarget();
           this._updateCamera();
         }
       }
@@ -464,6 +581,7 @@ class Game {
           const f = this.camDist / 35;
           this.camTarget.x = camTouchStart.x - dx * 0.055 * f;
           this.camTarget.z = camTouchStart.z - dy * 0.055 * f;
+          this._clampCamTarget();
           this._updateCamera();
         }
       }

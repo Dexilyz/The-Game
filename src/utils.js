@@ -49,8 +49,8 @@ export function aStar(walkable, gw, gh, sx, sy, ex, ey) {
     if (cur.x === ex && cur.y === ey) {
       const path = [];
       let c = key(cur.x, cur.y);
-      while (from.has(c)) { const p = from.get(c); path.unshift({ x: p.x, y: p.y }); c = key(p.x, p.y); }
-      path.push({ x: ex, y: ey });
+      while (from.has(c)) { const p = from.get(c); path.unshift({ gx: p.x, gy: p.y }); c = key(p.x, p.y); }
+      path.push({ gx: ex, gy: ey });
       return path;
     }
 

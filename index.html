@@ -84,6 +84,18 @@
       <div id="blist"></div>
       <button id="hire-btn">👷 Нанять строителя — $550</button>
       <div class="hire-note">Разовый взнос $550 · Зарплата $55/день</div>
+
+      <div class="hire-card">
+        <div class="hire-ico">🧑‍💼</div>
+        <div>
+          <div class="hire-title">Персонал аттракционов</div>
+          <div class="hire-sub">Работают на аттракционах и увеличивают доход!</div>
+          <div class="hire-cost" id="staff-sal">Зарплата: $30/день</div>
+        </div>
+      </div>
+      <div id="stafflist"></div>
+      <button id="staff-btn">🧑‍💼 Нанять сотрудника — $300</button>
+      <div class="hire-note">Разовый взнос $300 · Зарплата $30/день</div>
     </div>
   </div>
 
@@ -127,6 +139,61 @@
       <div class="inv-btns">
         <button class="btn-decline" id="inv-decline">Отказать</button>
         <button class="btn-accept" id="inv-accept">✓ Принять сделку</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BUILD CONFIRMATION MODAL -->
+  <div id="build-modal" class="hidden">
+    <div id="build-backdrop"></div>
+    <div id="build-card">
+      <div id="bc-ico"></div>
+      <h3 id="bc-name"></h3>
+      <p id="bc-desc"></p>
+      <div class="inv-terms">
+        <div class="iterm">
+          <div class="it-lbl">Стоимость</div>
+          <div class="it-val red" id="bc-cost"></div>
+        </div>
+        <div class="iterm">
+          <div class="it-lbl">Залог сейчас</div>
+          <div class="it-val green" id="bc-deposit"></div>
+        </div>
+        <div class="iterm">
+          <div class="it-lbl">Размер</div>
+          <div class="it-val" id="bc-size"></div>
+        </div>
+      </div>
+      <div class="inv-btns">
+        <button class="btn-decline" id="bc-cancel">Отмена</button>
+        <button class="btn-accept" id="bc-confirm">✓ Построить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ATTRACTION INFO / UPGRADE MODAL -->
+  <div id="attr-modal" class="hidden">
+    <div id="attr-backdrop"></div>
+    <div id="attr-card">
+      <div id="ac-ico"></div>
+      <h3 id="ac-name"></h3>
+      <div class="inv-terms">
+        <div class="iterm">
+          <div class="it-lbl">Уровень</div>
+          <div class="it-val" id="ac-level"></div>
+        </div>
+        <div class="iterm">
+          <div class="it-lbl">Заработано</div>
+          <div class="it-val green" id="ac-earned"></div>
+        </div>
+        <div class="iterm">
+          <div class="it-lbl">Сотрудник</div>
+          <div class="it-val" id="ac-staff"></div>
+        </div>
+      </div>
+      <div class="inv-btns">
+        <button class="btn-decline" id="ac-close">Закрыть</button>
+        <button class="btn-accept" id="ac-upgrade">⬆️ Улучшить</button>
       </div>
     </div>
   </div>

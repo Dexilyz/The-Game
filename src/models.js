@@ -193,6 +193,29 @@ export function createBuilder(app) {
   return g;
 }
 
+// ─── STAFF ───────────────────────────────────────────────────────────────────
+export function createStaff(app) {
+  const g = createVisitor({ ...app, shirt: app.vest });
+
+  const head = g.getObjectByName('head');
+  if (head) {
+    const capM = M(app.vest, 0.5, 0.05);
+    const cap = mk(new THREE.SphereGeometry(0.30, 14, 8, 0, Math.PI*2, 0, Math.PI/2.4), capM);
+    place(head, cap, 0, 0.40, 0);
+    place(head, mk(new THREE.CylinderGeometry(0.31, 0.31, 0.035, 14), capM), 0, 0.44, 0);
+  }
+
+  const badgeM = Mm(0xf1c40f, 0.3);
+  place(g, box(0.16, 0.20, 0.04, badgeM), -0.18, 1.10, 0.23);
+
+  const clipM = Mm(0xecf0f1, 0.4);
+  const board = grp(g, 0.30, 0.92, 0.05, 'board');
+  place(board, box(0.26, 0.34, 0.03, clipM));
+  place(board, box(0.26, 0.04, 0.03, Mm(0x95a5a6)), 0, 0.16, 0.01);
+
+  return g;
+}
+
 // ─── INVESTOR ────────────────────────────────────────────────────────────────
 export function createInvestor(app) {
   const g = createVisitor({ ...app, shirt: 0xffffff });
@@ -555,12 +578,6 @@ export function createFoodStall(col) {
     place(g, sph(0.16, M(fCols[i], 0.5), 10, 8), -0.54 + i * 0.36, 1.26, 0.50);
   }
 
-  place(g, mk(new THREE.CylinderGeometry(0.14, 0.16, 0.72, 10), M(0xffffff, 0.7)), 0, 1.58, -0.60);
-  place(g, sph(0.21, M(0xF4A460, 0.7), 12, 10), 0, 2.12, -0.58);
-  for (const ex of [-0.07, 0.07]) {
-    place(g, sph(0.04, M(0x111111, 0.3), 6, 4), ex, 2.14, -0.40);
-  }
-
   return g;
 }
 
@@ -855,14 +872,17 @@ export function animateAttraction(g, dt, state) {
 }
 
 // ─── TILE MODELS ─────────────────────────────────────────────────────────────
-export function createPathTile(T3D) {
+export function createPathTile(T3D, conn = { n: true, e: true, s: true, w: true }) {
   const tileM  = M(0xcabfa6, 0.88);
   const groove = M(0xb5a891, 0.92);
+  const curbM  = M(0x4d8a2e, 0.85);
 
+  const g = new THREE.Group();
   const m = mk(new THREE.BoxGeometry(T3D - 0.06, 0.14, T3D - 0.06), tileM);
   m.receiveShadow = true;
+  g.add(m);
 
-  // Groove lines
+  // Groove lines (decorative paving detail)
   for (const off of [-T3D * 0.24, T3D * 0.24]) {
     const l = mk(new THREE.BoxGeometry(0.04, 0.15, T3D - 0.08), groove);
     l.position.x = off;
@@ -874,7 +894,16 @@ export function createPathTile(T3D) {
     m.add(l);
   }
 
-  return m;
+  // Grass curb on edges that DON'T connect to another path/entrance tile —
+  // this makes the path automatically look continuous through turns,
+  // T-junctions and crossings without needing separate rotated models.
+  const curbH = 0.22, curbW = 0.16;
+  if (!conn.n) place(g, mk(new THREE.BoxGeometry(T3D, curbH, curbW), curbM), 0, curbH / 2 - 0.02, -(T3D / 2 - curbW / 2));
+  if (!conn.s) place(g, mk(new THREE.BoxGeometry(T3D, curbH, curbW), curbM), 0, curbH / 2 - 0.02,  (T3D / 2 - curbW / 2));
+  if (!conn.e) place(g, mk(new THREE.BoxGeometry(curbW, curbH, T3D), curbM),  (T3D / 2 - curbW / 2), curbH / 2 - 0.02, 0);
+  if (!conn.w) place(g, mk(new THREE.BoxGeometry(curbW, curbH, T3D), curbM), -(T3D / 2 - curbW / 2), curbH / 2 - 0.02, 0);
+
+  return g;
 }
 
 export function createEntranceTile(T3D) {
@@ -918,6 +947,40 @@ export function createTree() {
   return g;
 }
 
+export function createParkingLot(col) {
+  const g = new THREE.Group();
+  const asphaltM = M(0x3a3f44, 0.92);
+  const lineM    = M(0xf4d35e, 0.6);
+  const carCols  = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6];
+
+  place(g, mk(new THREE.BoxGeometry(8.8, 0.10, 5.8), asphaltM), 0, 0.05, 0);
+
+  for (let i = 0; i < 6; i++) {
+    place(g, mk(new THREE.BoxGeometry(0.08, 0.11, 2.2), lineM), -3.85 + i * 1.4, 0.10, -1.7);
+    place(g, mk(new THREE.BoxGeometry(0.08, 0.11, 2.2), lineM), -3.85 + i * 1.4, 0.10,  1.7);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const cg = new THREE.Group();
+    const bodyM = M(carCols[i % carCols.length], 0.45, 0.15);
+    place(cg, mk(new THREE.BoxGeometry(1.0, 0.34, 1.9), bodyM), 0, 0.32, 0);
+    place(cg, mk(new THREE.BoxGeometry(0.78, 0.30, 1.0), Mg(carCols[i % carCols.length], 0.05)), 0, 0.62, -0.1);
+    for (const wz of [-0.62, 0.62]) for (const wx of [-0.46, 0.46]) {
+      const wheel = mk(new THREE.CylinderGeometry(0.18, 0.18, 0.16, 10), Mm(0x222222, 0.4));
+      wheel.rotation.z = Math.PI / 2;
+      place(cg, wheel, wx, 0.18, wz);
+    }
+    cg.position.set(-2.8 + i * 1.9, 0, -1.7 + (i % 2) * 3.4);
+    g.add(cg);
+  }
+
+  const signPost = mk(new THREE.CylinderGeometry(0.06, 0.06, 1.8, 8), Mm(0x888888, 0.3));
+  place(g, signPost, -4.0, 0.9, -2.5);
+  place(g, mk(new THREE.BoxGeometry(0.6, 0.6, 0.06), M(0x2980b9, 0.5)), -4.0, 1.85, -2.5);
+
+  return g;
+}
+
 export function createAttractionModel(typeId, col) {
   switch (typeId) {
     case 'ferris_wheel':   return createFerrisWheel(col);
@@ -928,6 +991,7 @@ export function createAttractionModel(typeId, col) {
     case 'ice_cream':      return createIceCreamCart(col);
     case 'haunted_house':  return createHauntedHouse(col);
     case 'balloon_ride':   return createBalloonRide(col);
+    case 'parking':        return createParkingLot(col);
     default: {
       const g = new THREE.Group();
       place(g, mk(new THREE.BoxGeometry(2, 2, 2), M(col, 0.6)), 0, 1, 0);

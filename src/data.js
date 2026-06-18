@@ -55,6 +55,13 @@ export const ATTRACTIONS = {
     incomePerVisit: 18, capacity: 12, opCost: 130, power: 10,
     desc: 'Король аттракционов! Привлекает всех!', col: 0xc0392b, star: 2,
   },
+  parking: {
+    id: 'parking', name: 'Парковка', emoji: '🚗',
+    cost: 1200, size: [3, 2], buildTime: 14, buildersNeeded: 1,
+    incomePerVisit: 0, capacity: 0, opCost: 15, power: 0,
+    desc: 'Больше места для машин — больше гостей приезжает в парк!', col: 0x7f8c8d, star: 1,
+    visitorBonus: 0.15,
+  },
 };
 
 export const INVESTOR_TYPES = [
@@ -76,3 +83,17 @@ export const BUILDER_SPD  = 90;
 export const MAX_BUILDERS = 12;
 export const START_MONEY  = 6000;
 export const PATH_COST    = 20;
+
+export const STAFF_COST   = 300;
+export const STAFF_SAL    = 30;
+export const MAX_STAFF    = 12;
+export const STAFF_INCOME_MULT = 1.3;
+
+// Upgrade levels: index 0 = level1->2, index 1 = level2->3
+export const UPGRADE_COST_MULT   = [0.55, 0.9];
+export const UPGRADE_INCOME_MULT = [1, 1.5, 2.1];
+export const UPGRADE_CAP_MULT    = [1, 1.35, 1.8];
+export const MAX_LEVEL = 3;
+
+// Construction deposit fraction paid upfront; remainder paid gradually as builders work
+export const BUILD_DEPOSIT_FRAC = 0.2;

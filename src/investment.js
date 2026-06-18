@@ -55,21 +55,11 @@ export class InvestmentSystem {
     this.game.economy.addInvestment({ id: uid(), name: t.name, equity: eq, amount: amt, daysLeft: t.days });
     this.acceptedIds.add(t.id);
     inv.dismiss();
-    setTimeout(() => {
-      const i = this.pending.indexOf(inv);
-      if (i >= 0) this.pending.splice(i, 1);
-    }, 5000);
   }
 
   declineDeal(invId) {
     const inv = this.pending.find(i => i.id === invId);
-    if (inv) {
-      inv.dismiss();
-      setTimeout(() => {
-        const i = this.pending.indexOf(inv);
-        if (i >= 0) this.pending.splice(i, 1);
-      }, 5000);
-    }
+    if (inv) inv.dismiss();
   }
 
   update(dt) {
@@ -80,7 +70,11 @@ export class InvestmentSystem {
     }
     for (const inv of this.pending) inv.update(dt, this.game);
     for (let i = this.pending.length - 1; i >= 0; i--) {
-      if (this.pending[i].state === 'dead') this.pending.splice(i, 1);
+      const inv = this.pending[i];
+      if (inv.state === 'dead') {
+        if (inv.mesh) { this.game.scene.remove(inv.mesh); inv.mesh = null; }
+        this.pending.splice(i, 1);
+      }
     }
   }
 }

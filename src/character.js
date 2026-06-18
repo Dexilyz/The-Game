@@ -1,6 +1,8 @@
 import { TILE, GRID_W, GRID_H, SKIN_TONES, HAIR_COLORS, SHIRT_COLS, PANT_COLS, BUILDER_SPD, ATTRACTIONS } from './data.js';
 import { uid, pick, rnd, rndInt, aStar, dist, lerp } from './utils.js';
 
+const STAFF_COLORS = ['#16a085','#2980b9','#c0392b','#8e44ad','#d35400'];
+
 // ---- Base Character ----
 class Character {
   constructor(type, px, py) {
@@ -30,13 +32,13 @@ class Character {
     const dx = nx - this.px, dy = ny - this.py;
     const d  = Math.hypot(dx, dy);
     if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
-    if (d < 2) {
+    const spd = this.speed * dt;
+    if (d < 2 || spd >= d) {
       this.px = nx;
       this.py = ny;
       this.path.shift();
       return this.path.length === 0;
     }
-    const spd = this.speed * dt;
     this.px += (dx / d) * spd;
     this.py += (dy / d) * spd;
     return false;
@@ -78,7 +80,7 @@ export class Visitor extends Character {
     const open = this.game.park.getOpenAttractions();
     if (open.length === 0) return null;
     // Weight by queue size (prefer shorter queues)
-    const candidates = open.filter(a => a.queue.length < ATTRACTIONS[a.typeId].capacity);
+    const candidates = open.filter(a => a.queue.length < this.game.park.attrCapacity(a));
     if (candidates.length === 0) return null;
     return pick(candidates);
   }
@@ -211,7 +213,7 @@ export class Visitor extends Character {
 
   _leave(game) {
     const en = game.park.entranceX;
-    const ey = game.park.entranceY + 3;
+    const ey = game.park.entranceY;
     const path = aStar(
       (gx, gy) => game.park.isWalkable(gx, gy),
       GRID_W, GRID_H,
@@ -242,36 +244,35 @@ export class Builder extends Character {
   }
 
   assignJob(attrId) {
-    this.job   = attrId;
-    this.state = 'going';
     const attr = this.game.park.attractions.get(attrId);
-    if (!attr) return;
+    if (!attr) return false;
     const spot = this.game.park.getNearbyPath(attr);
-    if (!spot) return;
+    if (!spot) return false;
     const path = aStar(
       (gx, gy) => this.game.park.isWalkable(gx, gy),
       GRID_W, GRID_H,
       this.gx, this.gy,
       spot.x, spot.y
     );
-    if (path) {
-      this.path = path;
-      attr.buildersHere.push(this.id);
-    }
+    if (!path) return false;
+    this.job   = attrId;
+    this.path  = path;
+    this.state = 'going';
+    attr.buildersHere.push(this.id);
+    return true;
   }
 
   update(dt, game) {
     super.update(dt, game);
     switch (this.state) {
       case 'idle': {
-        // Look for work
+        // Look for work — only claim a job if a path actually exists to it
         for (const attr of game.park.attractions.values()) {
           const def = ATTRACTIONS[attr.typeId];
           if ((attr.state === 'planned' || attr.state === 'building') &&
               attr.buildersHere.length < def.buildersNeeded &&
               !attr.buildersHere.includes(this.id)) {
-            this.assignJob(attr.id);
-            return;
+            if (this.assignJob(attr.id)) return;
           }
         }
         break;
@@ -357,7 +358,89 @@ export class Investor extends Character {
   }
 
   dismiss() {
-    this.path  = [{ gx: this.game.park.entranceX, gy: this.game.park.entranceY + 3 }];
+    this.path  = [{ gx: this.game.park.entranceX, gy: this.game.park.entranceY }];
     this.state = 'leaving';
+  }
+}
+
+// ---- Staff (operates open attractions) ----
+export class Staff extends Character {
+  constructor(px, py, game) {
+    super('staff', px, py);
+    this.game  = game;
+    this.speed = BUILDER_SPD;
+    this.job   = null; // attraction id
+    this.app = {
+      skin:  pick(SKIN_TONES),
+      hair:  pick(HAIR_COLORS),
+      vest:  pick(STAFF_COLORS),
+      pants: '#1a1a2e',
+      name:  pick(['Olya','Vika','Igor','Pasha','Dasha','Liza','Anton','Yana']),
+    };
+    this.state = 'idle';
+    this.depot = { gx: Math.floor(px / TILE), gy: Math.floor(py / TILE) };
+  }
+
+  assignJob(attrId) {
+    const attr = this.game.park.attractions.get(attrId);
+    if (!attr) return false;
+    const spot = this.game.park.getNearbyPath(attr);
+    if (!spot) return false;
+    const path = aStar(
+      (gx, gy) => this.game.park.isWalkable(gx, gy),
+      GRID_W, GRID_H,
+      this.gx, this.gy,
+      spot.x, spot.y
+    );
+    if (!path) return false;
+    this.job     = attrId;
+    this.path    = path;
+    this.state   = 'going';
+    attr.staffId = this.id;
+    return true;
+  }
+
+  update(dt, game) {
+    super.update(dt, game);
+    switch (this.state) {
+      case 'idle': {
+        for (const attr of game.park.attractions.values()) {
+          if (attr.state === 'open' && !attr.staffId) {
+            if (this.assignJob(attr.id)) return;
+          }
+        }
+        break;
+      }
+      case 'going': {
+        const arrived = this.moveToward(dt);
+        if (arrived) this.state = 'working';
+        break;
+      }
+      case 'working': {
+        const attr = game.park.attractions.get(this.job);
+        if (!attr || attr.state !== 'open') {
+          if (attr && attr.staffId === this.id) attr.staffId = null;
+          this.job = null;
+          this._returnToDepot(game);
+        }
+        break;
+      }
+      case 'returning': {
+        const arrived = this.moveToward(dt);
+        if (arrived) this.state = 'idle';
+        break;
+      }
+    }
+  }
+
+  _returnToDepot(game) {
+    const path = aStar(
+      (gx, gy) => game.park.isWalkable(gx, gy),
+      GRID_W, GRID_H,
+      this.gx, this.gy,
+      this.depot.gx, this.depot.gy
+    );
+    this.path  = path || [];
+    this.state = 'returning';
   }
 }

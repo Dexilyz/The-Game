@@ -1,4 +1,4 @@
-import { TILE, T3D, GRID_W, GRID_H, T, ATTRACTIONS, PATH_COST } from './data.js';
+import { TILE, T3D, GRID_W, GRID_H, T, ATTRACTIONS, PATH_COST, BUILD_DEPOSIT_FRAC, UPGRADE_COST_MULT, UPGRADE_INCOME_MULT, UPGRADE_CAP_MULT, MAX_LEVEL, STAFF_INCOME_MULT } from './data.js';
 import { uid } from './utils.js';
 import { createPathTile, createEntranceTile, createTree } from './models.js';
 
@@ -37,7 +37,6 @@ export class Park {
   }
 
   _buildAll3D() {
-    const scene = this.game.scene;
     for (let gy = 0; gy < GRID_H; gy++) {
       for (let gx = 0; gx < GRID_W; gx++) {
         const t = this.grid[gy][gx];
@@ -48,13 +47,34 @@ export class Park {
     }
   }
 
+  // ── Path connectivity (for auto-rotating/joining path tiles) ───────────────
+  _isPathLike(gx, gy) {
+    if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return false;
+    const t = this.grid[gy][gx];
+    return t === T.PATH || t === T.ENTRANCE;
+  }
+
+  _pathConnections(gx, gy) {
+    return {
+      n: this._isPathLike(gx, gy - 1),
+      s: this._isPathLike(gx, gy + 1),
+      e: this._isPathLike(gx + 1, gy),
+      w: this._isPathLike(gx - 1, gy),
+    };
+  }
+
+  _refreshPathTile(gx, gy) {
+    if (gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H) return;
+    if (this.grid[gy][gx] === T.PATH) this._add3DTile(gx, gy, 'path');
+  }
+
   _add3DTile(gx, gy, kind) {
     const key = `${gx},${gy}`;
     const old = this.tileMeshes.get(key);
     if (old) this.game.scene.remove(old);
 
     let mesh;
-    if (kind === 'path')     mesh = createPathTile(T3D);
+    if (kind === 'path')     mesh = createPathTile(T3D, this._pathConnections(gx, gy));
     else if (kind === 'entrance') mesh = createEntranceTile(T3D);
     else if (kind === 'tree')    mesh = createTree();
     else return;
@@ -91,14 +111,20 @@ export class Park {
     this.game.economy.spend(PATH_COST);
     this.grid[gy][gx] = T.PATH;
     this._add3DTile(gx, gy, 'path');
+    // Re-render neighbors so connections (turns/T-junctions) join up visually
+    this._refreshPathTile(gx - 1, gy);
+    this._refreshPathTile(gx + 1, gy);
+    this._refreshPathTile(gx, gy - 1);
+    this._refreshPathTile(gx, gy + 1);
     return true;
   }
 
   placeAttraction(gx, gy, typeId) {
     if (!this.canPlace(gx, gy, typeId)) return null;
     const def = ATTRACTIONS[typeId];
-    if (!this.game.economy.canAfford(def.cost)) return null;
-    this.game.economy.spend(def.cost);
+    const deposit = Math.round(def.cost * BUILD_DEPOSIT_FRAC);
+    if (!this.game.economy.canAfford(deposit)) return null;
+    this.game.economy.spend(deposit);
 
     const id = uid();
     const [w, h] = def.size;
@@ -108,13 +134,17 @@ export class Park {
       px: gx * TILE, py: gy * TILE,
       state: 'planned',
       progress: 0,
+      level: 1,
       buildersHere: [],
+      staffId: null,
       queue: [],
       visitors: [],
       totalEarned: 0,
       totalVisited: 0,
       mesh: null,
       progressBar: null,
+      totalCost: def.cost,
+      paidCost: deposit,
     };
     this.attractions.set(id, attr);
     for (let dy = 0; dy < h; dy++) {
@@ -125,8 +155,23 @@ export class Park {
     }
     // Create 3D model
     this.game.onAttractionPlaced(attr);
-    this.game.ui.notify(`🔨 Строим ${def.name}…`, 'info');
+    this.game.ui.notify(`🔨 Строим ${def.name}… (внесён залог ${deposit}$, остальное — по ходу стройки)`, 'info');
     return attr;
+  }
+
+  upgradeAttraction(id) {
+    const attr = this.attractions.get(id);
+    if (!attr || attr.state !== 'open') return false;
+    const level = attr.level || 1;
+    if (level >= MAX_LEVEL) return false;
+    const def  = ATTRACTIONS[attr.typeId];
+    const cost = Math.round(def.cost * UPGRADE_COST_MULT[level - 1]);
+    if (!this.game.economy.canAfford(cost)) return false;
+    this.game.economy.spend(cost);
+    attr.level = level + 1;
+    this.game.ui.notify(`⬆️ ${def.name} улучшен до уровня ${attr.level}!`, 'success');
+    this.game.onAttractionUpgraded(attr);
+    return true;
   }
 
   isWalkable(gx, gy) {
@@ -165,6 +210,11 @@ export class Park {
     return id ? this.attractions.get(id) : null;
   }
 
+  attrCapacity(attr) {
+    const def = ATTRACTIONS[attr.typeId];
+    return Math.round(def.capacity * UPGRADE_CAP_MULT[(attr.level || 1) - 1]);
+  }
+
   // ── Update ────────────────────────────────────────────────────────────────
   update(dt) {
     for (const attr of this.attractions.values()) {
@@ -174,9 +224,21 @@ export class Park {
       if (attr.state === 'building') {
         const rate = attr.buildersHere.length * 0.018;
         attr.progress += rate * dt;
+        if (attr.progress >= 1) attr.progress = 1;
+
+        // Gradual payment: charge the remaining cost proportionally to progress
+        const totalDue = attr.totalCost * attr.progress;
+        const toPay    = totalDue - attr.paidCost;
+        if (toPay > 0.01) {
+          this.game.economy.spend(toPay);
+          attr.paidCost += toPay;
+        }
+
+        // Progressively reveal building parts as construction advances
+        this.game.onAttractionProgress(attr);
+
         if (attr.progress >= 1) {
-          attr.progress = 1;
-          attr.state    = 'open';
+          attr.state = 'open';
           this.game.onAttractionBuilt(attr);
           const def = ATTRACTIONS[attr.typeId];
           this.game.ui.notify(`🎉 ${def.name} открыт!`, 'success');
@@ -189,8 +251,10 @@ export class Park {
       }
       // Passive income while visitors are inside
       if (attr.state === 'open' && attr.visitors.length > 0) {
-        const def = ATTRACTIONS[attr.typeId];
-        const inc = def.incomePerVisit * attr.visitors.length * dt * 0.06;
+        const def      = ATTRACTIONS[attr.typeId];
+        const lvlMult  = UPGRADE_INCOME_MULT[(attr.level || 1) - 1];
+        const stfMult  = attr.staffId ? STAFF_INCOME_MULT : 1;
+        const inc = def.incomePerVisit * lvlMult * stfMult * attr.visitors.length * dt * 0.06;
         this.game.economy.earn(inc);
         attr.totalEarned += inc;
       }

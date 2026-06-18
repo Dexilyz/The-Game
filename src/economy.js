@@ -1,4 +1,4 @@
-import { DAY_SECS, BUILDER_SAL, ATTRACTIONS, START_MONEY } from './data.js';
+import { DAY_SECS, BUILDER_SAL, STAFF_SAL, ATTRACTIONS, START_MONEY } from './data.js';
 import { fmt$ } from './utils.js';
 
 export class Economy {
@@ -40,8 +40,8 @@ export class Economy {
   }
 
   _endOfDay() {
-    // Builder salaries
-    const salaries = this.game.builders.length * BUILDER_SAL;
+    // Builder & staff salaries
+    const salaries = this.game.builders.length * BUILDER_SAL + this.game.staff.length * STAFF_SAL;
     this.spend(salaries);
 
     // Operating costs for open attractions
