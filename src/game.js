@@ -4,16 +4,18 @@ import { Economy }          from './economy.js';
 import { InvestmentSystem } from './investment.js';
 import { UI }               from './ui.js';
 import { Visitor, Builder, Staff } from './character.js';
-import { createVisitor, createBuilder, createInvestor, createStaff, animateCharacter, animateAttraction, createAttractionModel } from './models.js';
-import { TILE, GRID_W, GRID_H, T3D, BUILDER_COST, BUILDER_SAL, MAX_BUILDERS, STAFF_COST, STAFF_SAL, MAX_STAFF, ATTRACTIONS, SKIN_TONES, HAIR_COLORS, SHIRT_COLS, PANT_COLS } from './data.js';
-import { rnd, rndInt, fmt$, pick } from './utils.js';
+import { createVisitor, createBuilder, createInvestor, createStaff, animateCharacter, animateAttraction, createAttractionModel, createCar, createCityBuilding } from './models.js';
+import { TILE, GRID_W, GRID_H, T3D, BUILDER_COST, BUILDER_SAL, MAX_BUILDERS, STAFF_COST, STAFF_SAL, MAX_STAFF, ATTRACTIONS, SKIN_TONES, HAIR_COLORS, SHIRT_COLS, PANT_COLS, TICKET_PRICE } from './data.js';
+import { rnd, rndInt, fmt$, pick, lerp } from './utils.js';
 
 class Game {
   constructor() {
+    this._detectDevice();
+
     // ── Three.js ──
     this.canvas   = document.getElementById('c');
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.isSmallScreen ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping       = THREE.ACESFilmicToneMapping;
@@ -25,14 +27,15 @@ class Game {
     this.scene.background = new THREE.Color(0x87ceeb);
     this.scene.fog = new THREE.Fog(0x87ceeb, 90, 140);
 
-    // Camera (tycoon top-down angle, fixed pitch)
-    this.camera = new THREE.PerspectiveCamera(48, this.canvas.width / this.canvas.height, 0.1, 500);
+    // Camera (tycoon top-down angle, fixed pitch) — tuned per detected device
+    this.camera = new THREE.PerspectiveCamera(this._fov, this.canvas.width / this.canvas.height, 0.1, 500);
     this.camTarget = new THREE.Vector3(GRID_W * T3D / 2, 0, GRID_H * T3D / 2);
-    this.camDist   = 40;
+    this.camDist   = this._initCamDist;
     this._updateCamera();
 
     this._setupLights();
     this._setupGround();
+    this._setupCity();
 
     // ── Systems ──
     this.park       = new Park(this);
@@ -43,11 +46,13 @@ class Game {
     this.visitors = [];
     this.builders = [];
     this.staff    = [];
+    this.cars     = [];
 
     // ── State ──
     this.mode          = 'normal';
     this.selectedBuild = null;
     this.gameSpeed     = 1;
+    this.paused        = false;
     this._visSpawn     = 0;
     this._lastTime     = 0;
     this._hoverGround  = new THREE.Vector3();
@@ -65,6 +70,22 @@ class Game {
     // Start
     this._loop(0);
     this.ui.notify('🎡 Добро пожаловать в Park Tycoon 3D! Нажми Строить.', 'info');
+  }
+
+  // ── Device / screen adaptation ──────────────────────────────────────────
+  _detectDevice() {
+    this.isTouch       = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    const w = window.innerWidth, h = window.innerHeight;
+    this.isSmallScreen  = Math.min(w, h) < 480;
+    this.isNarrow       = w / h < 0.62; // tall phone aspect ratio
+    document.body.classList.toggle('touch-device', this.isTouch);
+    document.body.classList.toggle('small-screen', this.isSmallScreen);
+    document.body.classList.toggle('narrow-screen', this.isNarrow);
+
+    // Wider FOV and slightly farther camera on small/tall phone screens so
+    // more of the park is visible without feeling cramped.
+    this._fov         = this.isNarrow ? 56 : (this.isSmallScreen ? 52 : 48);
+    this._initCamDist = this.isNarrow ? 48 : (this.isSmallScreen ? 44 : 40);
   }
 
   // ── Scene setup ──────────────────────────────────────────────────────────
@@ -130,6 +151,53 @@ class Game {
     }
   }
 
+  // Surround the park with a simple skyline + road grid so the camera never
+  // sees the park floating in an empty void — it reads as "a park inside a city".
+  _setupCity() {
+    const W = GRID_W * T3D, H = GRID_H * T3D;
+    const cx = W / 2, cz = H / 2;
+    const roadM  = new THREE.MeshStandardMaterial({ color: 0x44464a, roughness: 0.95 });
+    const lineM  = new THREE.MeshStandardMaterial({ color: 0xe0d27a, roughness: 0.7 });
+
+    // Ring road around the park
+    const ringPad = 10;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(
+      Math.max(W, H) / 2 + ringPad, Math.max(W, H) / 2 + ringPad + 4.5, 48
+    ), roadM);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(cx, 0.01, cz);
+    ring.receiveShadow = true;
+    this.scene.add(ring);
+
+    // A handful of straight avenues radiating outward, for visual variety
+    const blockCount = 40;
+    let seed = 7;
+    const rngBuilding = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+
+    const innerR = Math.max(W, H) / 2 + ringPad + 8;
+    for (let i = 0; i < blockCount; i++) {
+      const a  = (i / blockCount) * Math.PI * 2 + rngBuilding() * 0.15;
+      const r  = innerR + rngBuilding() * 55;
+      const bx = cx + Math.cos(a) * r;
+      const bz = cz + Math.sin(a) * r;
+      const b  = createCityBuilding(Math.floor(rngBuilding() * 1000) + i);
+      b.position.set(bx, 0, bz);
+      b.rotation.y = rngBuilding() * Math.PI * 2;
+      this.scene.add(b);
+    }
+
+    // Lane markings along the ring road
+    const laneCount = 64;
+    for (let i = 0; i < laneCount; i++) {
+      const a = (i / laneCount) * Math.PI * 2;
+      const r = Math.max(W, H) / 2 + ringPad + 2.25;
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.02, 0.18), lineM);
+      seg.position.set(cx + Math.cos(a) * r, 0.03, cz + Math.sin(a) * r);
+      seg.rotation.y = a;
+      this.scene.add(seg);
+    }
+  }
+
   // ── Camera ───────────────────────────────────────────────────────────────
   _clampCamTarget() {
     const margin = T3D * 2;
@@ -154,9 +222,16 @@ class Game {
   _loop(ts) {
     const dt = Math.min((ts - this._lastTime) / 1000, 0.12) * this.gameSpeed;
     this._lastTime = ts;
-    this._update(dt, ts / 1000);
+    if (!this.paused) this._update(dt, ts / 1000);
+    else this.ui.update();
     this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(t => this._loop(t));
+  }
+
+  togglePause() {
+    this.paused = !this.paused;
+    this.ui.notify(this.paused ? '⏸️ Игра на паузе' : '▶️ Игра продолжается', 'info');
+    this.ui.updatePauseButton();
   }
 
   _update(dt, t) {
@@ -166,6 +241,7 @@ class Game {
     this._updateVisitors(dt, t);
     this._updateBuilders(dt, t);
     this._updateStaff(dt, t);
+    this._updateCars(dt);
     this._spawnVisitors(dt);
     this._animateAttractions(dt);
     this._updateInvestorModels(dt, t);
@@ -250,6 +326,41 @@ class Game {
     }
   }
 
+  // ── Cars (parking arrivals + worker taxis) ──────────────────────────────
+  _spawnCarToPoint(targetGx, targetGy, color, isTaxi, onArrive) {
+    const tx = targetGx * T3D + T3D / 2;
+    const tz = targetGy * T3D + T3D / 2;
+    // Drive in from whichever grid edge is nearest the target, so cars take
+    // the shortest path in from the surrounding city roads.
+    const distN = targetGy, distS = GRID_H - targetGy, distW = targetGx, distE = GRID_W - targetGx;
+    const minD = Math.min(distN, distS, distW, distE);
+    let fx = tx, fz = tz;
+    if (minD === distS)      fz = GRID_H * T3D + 24;
+    else if (minD === distN) fz = -24;
+    else if (minD === distW) fx = -24;
+    else                     fx = GRID_W * T3D + 24;
+    const mesh = createCar(color, isTaxi);
+    mesh.position.set(fx, 0, fz);
+    mesh.rotation.y = Math.atan2(tx - fx, tz - fz);
+    this.scene.add(mesh);
+    this.cars.push({ mesh, fx, fz, tx, tz, t: 0, dur: rnd(2.2, 3.0), onArrive });
+  }
+
+  _updateCars(dt) {
+    for (let i = this.cars.length - 1; i >= 0; i--) {
+      const c = this.cars[i];
+      c.t += dt / c.dur;
+      const k = Math.min(1, c.t);
+      c.mesh.position.x = lerp(c.fx, c.tx, k);
+      c.mesh.position.z = lerp(c.fz, c.tz, k);
+      if (k >= 1) {
+        this.scene.remove(c.mesh);
+        this.cars.splice(i, 1);
+        if (c.onArrive) c.onArrive();
+      }
+    }
+  }
+
   _updateInvestorModels(dt, t) {
     for (const inv of this.investment.pending) {
       if (!inv.mesh) {
@@ -293,13 +404,34 @@ class Game {
   }
 
   _spawnOneVisitor() {
+    const openParking = this.park.getOpenOfType('parking');
+    if (openParking.length > 0 && Math.random() < 0.8) {
+      this._spawnVisitorByCar(pick(openParking));
+      return;
+    }
     const ex = this.park.entranceX;
     const ey = this.park.entranceY;
     const px = ex * TILE + TILE / 2 + rnd(-6, 6);
     const py = (ey + 2) * TILE;
-    const v  = new Visitor(px, py, this);
-    v.path   = [{ gx: ex, gy: ey }];
-    v.state  = 'entering';
+    this._placeVisitor(px, py, [{ gx: ex, gy: ey }]);
+  }
+
+  // Visitor drives in by car to a parking lot, then walks into the park on foot.
+  _spawnVisitorByCar(parkingAttr) {
+    const spot = this.park.getNearbyPath(parkingAttr);
+    if (!spot) { this._spawnOneVisitor(); return; }
+    const carCol = pick([0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0xecf0f1]);
+    this._spawnCarToPoint(spot.x, spot.y, carCol, false, () => {
+      const px = spot.x * TILE + TILE / 2;
+      const py = spot.y * TILE + TILE / 2;
+      this._placeVisitor(px, py, []);
+    });
+  }
+
+  _placeVisitor(px, py, initialPath) {
+    const v = new Visitor(px, py, this);
+    v.path  = initialPath;
+    v.state = 'entering';
 
     const app = {
       skin:      pick(SKIN_TONES),
@@ -316,6 +448,11 @@ class Game {
     v.mesh.position.set((px / TILE) * T3D, 0, (py / TILE) * T3D);
     this.scene.add(v.mesh);
     this.visitors.push(v);
+
+    // Ticket booth: visitors pay for entry if one is open
+    if (this.park.getOpenOfType('ticket_booth').length > 0) {
+      this.economy.earn(TICKET_PRICE);
+    }
   }
 
   // ── Public actions ────────────────────────────────────────────────────────
@@ -327,27 +464,30 @@ class Game {
       this.ui.notify(`❌ Нужно ${fmt$(BUILDER_COST)} для найма`, 'error'); return;
     }
     this.economy.spend(BUILDER_COST);
+    this.ui.notify('🚕 Такси едет со строителем…', 'info');
     const ex = this.park.entranceX;
     const ey = this.park.entranceY;
-    const px = ex * TILE + TILE / 2 + rnd(-10, 10);
-    const py = ey * TILE + TILE / 2;
-    const b  = new Builder(px, py, this);
-    b.depot  = { gx: ex, gy: ey };
+    this._spawnCarToPoint(ex, ey, 0xf1c40f, true, () => {
+      const px = ex * TILE + TILE / 2 + rnd(-10, 10);
+      const py = ey * TILE + TILE / 2;
+      const b  = new Builder(px, py, this);
+      b.depot  = { gx: ex, gy: ey };
 
-    const app = {
-      skin:  pick(SKIN_TONES),
-      hair:  pick(HAIR_COLORS),
-      vest:  pick([0xf39c12, 0xe67e22, 0xe74c3c, 0x27ae60]),
-      hard:  pick([0xf1c40f, 0xe74c3c, 0x3498db, 0xffffff]),
-      pants: 0x1a1a2e,
-      acc:   null,
-    };
-    b.app   = { ...b.app, ...app };
-    b.mesh  = createBuilder(app);
-    b.mesh.position.set((px / TILE) * T3D, 0, (py / TILE) * T3D);
-    this.scene.add(b.mesh);
-    this.builders.push(b);
-    this.ui.notify(`👷 Строитель нанят! (${this.builders.length}/${MAX_BUILDERS}) — $${BUILDER_SAL}/день`, 'success');
+      const app = {
+        skin:  pick(SKIN_TONES),
+        hair:  pick(HAIR_COLORS),
+        vest:  pick([0xf39c12, 0xe67e22, 0xe74c3c, 0x27ae60]),
+        hard:  pick([0xf1c40f, 0xe74c3c, 0x3498db, 0xffffff]),
+        pants: 0x1a1a2e,
+        acc:   null,
+      };
+      b.app   = { ...b.app, ...app };
+      b.mesh  = createBuilder(app);
+      b.mesh.position.set((px / TILE) * T3D, 0, (py / TILE) * T3D);
+      this.scene.add(b.mesh);
+      this.builders.push(b);
+      this.ui.notify(`👷 Строитель нанят! (${this.builders.length}/${MAX_BUILDERS}) — $${BUILDER_SAL}/день`, 'success');
+    });
   }
 
   onHireStaff() {
@@ -358,25 +498,28 @@ class Game {
       this.ui.notify(`❌ Нужно ${fmt$(STAFF_COST)} для найма`, 'error'); return;
     }
     this.economy.spend(STAFF_COST);
+    this.ui.notify('🚕 Такси едет с сотрудником…', 'info');
     const ex = this.park.entranceX;
     const ey = this.park.entranceY;
-    const px = ex * TILE + TILE / 2 + rnd(-10, 10);
-    const py = ey * TILE + TILE / 2;
-    const s  = new Staff(px, py, this);
+    this._spawnCarToPoint(ex, ey, 0xf1c40f, true, () => {
+      const px = ex * TILE + TILE / 2 + rnd(-10, 10);
+      const py = ey * TILE + TILE / 2;
+      const s  = new Staff(px, py, this);
 
-    const app = {
-      skin: pick(SKIN_TONES),
-      hair: pick(HAIR_COLORS),
-      vest: s.app.vest,
-      pants: '#1a1a2e',
-      acc: null,
-    };
-    s.app  = { ...s.app, ...app };
-    s.mesh = createStaff(app);
-    s.mesh.position.set((px / TILE) * T3D, 0, (py / TILE) * T3D);
-    this.scene.add(s.mesh);
-    this.staff.push(s);
-    this.ui.notify(`🧑‍💼 Сотрудник нанят! (${this.staff.length}/${MAX_STAFF}) — $${STAFF_SAL}/день`, 'success');
+      const app = {
+        skin: pick(SKIN_TONES),
+        hair: pick(HAIR_COLORS),
+        vest: s.app.vest,
+        pants: '#1a1a2e',
+        acc: null,
+      };
+      s.app  = { ...s.app, ...app };
+      s.mesh = createStaff(app);
+      s.mesh.position.set((px / TILE) * T3D, 0, (py / TILE) * T3D);
+      this.scene.add(s.mesh);
+      this.staff.push(s);
+      this.ui.notify(`🧑‍💼 Сотрудник нанят! (${this.staff.length}/${MAX_STAFF}) — $${STAFF_SAL}/день`, 'success');
+    });
   }
 
   // Called from park when attraction is placed to create 3D model

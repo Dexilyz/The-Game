@@ -152,8 +152,47 @@ export class UI {
       document.getElementById('attr-modal').classList.add('hidden');
     });
 
+    // Pause
+    document.getElementById('pause-btn').addEventListener('click', () => {
+      this.game.togglePause();
+    });
+
+    // Expand plot
+    document.getElementById('expand-btn').addEventListener('click', () => {
+      const park = this.game.park;
+      if (!park.canExpand()) { this.notify('🗺️ Участок уже максимального размера', 'warn'); return; }
+      const cost = park.expandCost();
+      if (!this.game.economy.canAfford(cost)) {
+        this.notify(`❌ Нужно ${fmt$(cost)} для расширения участка`, 'error'); return;
+      }
+      if (park.expandPlot()) this._updatePlotPanel();
+    });
+
     // Resize
     window.addEventListener('resize', () => this.game.resize());
+  }
+
+  updatePauseButton() {
+    const btn = document.getElementById('pause-btn');
+    if (!btn) return;
+    btn.textContent = this.game.paused ? '▶️' : '⏸️';
+    btn.classList.toggle('active', this.game.paused);
+  }
+
+  _updatePlotPanel() {
+    const park = this.game.park;
+    const sub = document.getElementById('plot-sub');
+    const btn = document.getElementById('expand-btn');
+    if (!sub || !btn) return;
+    const w = park.ownedX1 - park.ownedX0, h = park.ownedY1 - park.ownedY0;
+    sub.textContent = `Текущий размер: ${w}×${h} тайлов.`;
+    if (park.canExpand()) {
+      btn.textContent = `🗺️ Расширить участок — ${fmt$(park.expandCost())}`;
+      btn.disabled = false;
+    } else {
+      btn.textContent = '🗺️ Участок максимального размера';
+      btn.disabled = true;
+    }
   }
 
   _onToolbar(p) {
@@ -163,6 +202,7 @@ export class UI {
     document.getElementById('modebar').classList.add('hidden');
     switch (p) {
       case 'build':
+        this._updatePlotPanel();
         this.showSheet('sh-build');
         break;
       case 'path':

@@ -1,6 +1,7 @@
-import { TILE, T3D, GRID_W, GRID_H, T, ATTRACTIONS, PATH_COST, BUILD_DEPOSIT_FRAC, UPGRADE_COST_MULT, UPGRADE_INCOME_MULT, UPGRADE_CAP_MULT, MAX_LEVEL, STAFF_INCOME_MULT } from './data.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js';
+import { TILE, T3D, GRID_W, GRID_H, T, ATTRACTIONS, PATH_COST, BUILD_DEPOSIT_FRAC, UPGRADE_COST_MULT, UPGRADE_INCOME_MULT, UPGRADE_CAP_MULT, MAX_LEVEL, STAFF_INCOME_MULT, PLOT_MARGIN_START, PLOT_EXPAND_STEP, PLOT_EXPAND_COST } from './data.js';
 import { uid } from './utils.js';
-import { createPathTile, createEntranceTile, createTree } from './models.js';
+import { createPathTile, createEntranceTile, createTree, createFenceSegment } from './models.js';
 
 export class Park {
   constructor(game) {
@@ -11,7 +12,62 @@ export class Park {
     this.tileMeshes   = new Map(); // key='gx,gy' -> THREE mesh
     this.totalVisitors = 0;
     this.totalDays     = 0;
+    this.expansions    = 0;
+    this.ownedX0 = PLOT_MARGIN_START;
+    this.ownedX1 = GRID_W - PLOT_MARGIN_START;
+    this.ownedY0 = PLOT_MARGIN_START;
+    this.ownedY1 = GRID_H - 1; // bottom edge (entrance side) always owned
+    this.fenceGroup = null;
     this._initGrid();
+    this._renderFence();
+  }
+
+  // ── Plot ownership / expansion ──────────────────────────────────────────
+  inOwned(gx, gy) {
+    return gx >= this.ownedX0 && gx < this.ownedX1 && gy >= this.ownedY0 && gy < this.ownedY1;
+  }
+
+  expandCost() {
+    return PLOT_EXPAND_COST + this.expansions * Math.round(PLOT_EXPAND_COST * 0.6);
+  }
+
+  canExpand() {
+    return this.ownedX0 > 1 || this.ownedY0 > 1 || this.ownedX1 < GRID_W - 1;
+  }
+
+  expandPlot() {
+    if (!this.canExpand()) return false;
+    const cost = this.expandCost();
+    if (!this.game.economy.canAfford(cost)) return false;
+    this.game.economy.spend(cost);
+    this.ownedX0 = Math.max(1, this.ownedX0 - PLOT_EXPAND_STEP);
+    this.ownedX1 = Math.min(GRID_W - 1, this.ownedX1 + PLOT_EXPAND_STEP);
+    this.ownedY0 = Math.max(1, this.ownedY0 - PLOT_EXPAND_STEP);
+    this.expansions++;
+    this._renderFence();
+    this.game.ui.notify('🚧 Территория парка расширена!', 'success');
+    return true;
+  }
+
+  _renderFence() {
+    if (this.fenceGroup) { this.game.scene.remove(this.fenceGroup); }
+    const g = new THREE.Group();
+    g.name = 'plotFence';
+    const x0 = this.ownedX0 * T3D, x1 = this.ownedX1 * T3D;
+    const y0 = this.ownedY0 * T3D, y1 = this.ownedY1 * T3D;
+    const exWorld = this.entranceX !== undefined ? this.entranceX * T3D + T3D / 2 : null;
+
+    for (let gx = this.ownedX0; gx < this.ownedX1; gx++) {
+      if (exWorld !== null && Math.abs(gx * T3D + T3D / 2 - exWorld) < T3D * 1.5) continue; // gap at entrance
+      g.add(createFenceSegment(T3D, gx * T3D + T3D / 2, y0, 0));
+      g.add(createFenceSegment(T3D, gx * T3D + T3D / 2, y1, 0));
+    }
+    for (let gy = this.ownedY0; gy < this.ownedY1; gy++) {
+      g.add(createFenceSegment(T3D, x0, gy * T3D + T3D / 2, Math.PI / 2));
+      g.add(createFenceSegment(T3D, x1, gy * T3D + T3D / 2, Math.PI / 2));
+    }
+    this.fenceGroup = g;
+    this.game.scene.add(g);
   }
 
   _initGrid() {
@@ -94,6 +150,7 @@ export class Park {
       for (let dx = 0; dx < w; dx++) {
         const tx = gx + dx, ty = gy + dy;
         if (tx < 1 || ty < 1 || tx >= GRID_W - 1 || ty >= GRID_H - 1) return false;
+        if (!this.inOwned(tx, ty)) return false;
         if (this.grid[ty][tx] !== T.GRASS) return false;
       }
     }
@@ -102,6 +159,7 @@ export class Park {
 
   canPlacePath(gx, gy) {
     if (gx < 1 || gy < 1 || gx >= GRID_W - 1 || gy >= GRID_H - 1) return false;
+    if (!this.inOwned(gx, gy)) return false;
     return this.grid[gy][gx] === T.GRASS;
   }
 
@@ -199,6 +257,10 @@ export class Park {
 
   getOpenAttractions() {
     return [...this.attractions.values()].filter(a => a.state === 'open');
+  }
+
+  getOpenOfType(typeId) {
+    return this.getOpenAttractions().filter(a => a.typeId === typeId);
   }
 
   getAttractionCount() {

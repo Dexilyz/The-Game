@@ -62,7 +62,15 @@ export const ATTRACTIONS = {
     desc: 'Больше места для машин — больше гостей приезжает в парк!', col: 0x7f8c8d, star: 1,
     visitorBonus: 0.15,
   },
+  ticket_booth: {
+    id: 'ticket_booth', name: 'Билетная касса', emoji: '🎫',
+    cost: 500, size: [1, 1], buildTime: 6, buildersNeeded: 1,
+    incomePerVisit: 0, capacity: 0, opCost: 5, power: 0,
+    desc: 'Здесь гости покупают входные билеты в парк!', col: 0xd35400, star: 1,
+  },
 };
+
+export const TICKET_PRICE = 6;
 
 export const INVESTOR_TYPES = [
   { id: 'angel',     name: 'Бизнес-ангел',      avatar: '👼', minStar: 1, minVis: 0,   amt: [5000,15000],   eq: [5,12],  days: 30, desc: 'Верит в вашу идею с первого дня.' },
@@ -97,3 +105,8 @@ export const MAX_LEVEL = 3;
 
 // Construction deposit fraction paid upfront; remainder paid gradually as builders work
 export const BUILD_DEPOSIT_FRAC = 0.2;
+
+// Plot ownership: park starts smaller than the full grid and can be expanded for cash.
+export const PLOT_MARGIN_START = 5;  // tiles of unowned land on each side at start
+export const PLOT_EXPAND_STEP  = 2;  // tiles gained per expansion (per side)
+export const PLOT_EXPAND_COST  = 2500;

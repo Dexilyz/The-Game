@@ -1,5 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js';
 
+const SKIN_TONES_LOCAL = [0xFDDBB4, 0xF4A460, 0xDEB887, 0xC19A6B, 0x8B6914, 0x5C3317];
+
 // ─── PBR Material factory ─────────────────────────────────────────────────────
 const M   = (color, r=0.65, m=0.0)  => new THREE.MeshStandardMaterial({ color, roughness:r, metalness:m });
 const Mm  = (color, r=0.22)          => new THREE.MeshStandardMaterial({ color, roughness:r, metalness:0.9 });
@@ -47,13 +49,12 @@ export function createVisitor(app) {
   const shoeM  = M(0x222222, 0.5, 0.1);
   const hairM  = M(app.hair, 0.9, 0.0);
 
-  // Shoes
-  const shoeL = box(0.26, 0.11, 0.38, shoeM);
-  shoeL.position.set(-0.16, 0.055, 0.03);
-  root.add(shoeL);
-  const shoeR = box(0.26, 0.11, 0.38, shoeM);
-  shoeR.position.set( 0.16, 0.055, 0.03);
-  root.add(shoeR);
+  // Shoes (rounded capsule-ish shape instead of a flat box)
+  for (const sx of [-0.16, 0.16]) {
+    const shoe = grp(root, sx, 0.10, 0.02, null);
+    place(shoe, mk(new THREE.CylinderGeometry(0.115, 0.13, 0.13, 10), shoeM), 0, 0, 0);
+    place(shoe, sph(0.115, shoeM, 10, 8), 0, 0, 0.13);
+  }
 
   // Legs (tapered cylinder for pants)
   const lLeg = grp(root, -0.16, 0.72, 0, 'lLeg');
@@ -321,21 +322,25 @@ export function createFerrisWheel(col) {
     wheel.add(spk);
   }
 
-  // 8 gondolas - counter-rotating mounts to stay upright
+  // 8 gondolas - counter-rotated every frame (see animateAttraction) so they
+  // always hang straight down under gravity regardless of wheel spin angle.
   const gondCols = [0xe74c3c, 0x3498db, 0xf39c12, 0x2ecc71, 0x9b59b6, 0xe91e63, 0x00bcd4, 0xff5722];
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
     const cx = Math.cos(a) * 3.2;
     const cy = Math.sin(a) * 3.2;
 
-    const mount = grp(wheel, cx, cy, 0);
-    mount.rotation.z = -a;
+    const mount = grp(wheel, cx, cy, 0, `gondMount_${i}`);
 
     const gCol = gondCols[i];
     place(mount, mk(new THREE.CylinderGeometry(0.28, 0.24, 0.50, 10), M(gCol, 0.5)), 0, -0.30, 0);
     place(mount, mk(new THREE.TorusGeometry(0.28, 0.04, 6, 10), M(gCol, 0.4, 0.3)), 0, -0.06, 0);
     place(mount, mk(new THREE.CylinderGeometry(0.018, 0.018, 0.28, 4), Mm(0xaaaaaa, 0.4)), 0, 0.14, 0);
-    place(mount, sph(0.12, M(0xFDDBB4, 0.7), 10, 8), 0, -0.22, 0);
+    // Two riders, clearly seated inside the gondola basket
+    place(mount, sph(0.12, M(0xFDDBB4, 0.7), 10, 8), -0.10, -0.20, 0.04);
+    place(mount, mk(new THREE.CylinderGeometry(0.09, 0.10, 0.20, 8), M(gondCols[(i+3)%8], 0.6)), -0.10, -0.32, 0.04);
+    place(mount, sph(0.12, M(0xC19A6B, 0.7), 10, 8), 0.10, -0.20, -0.04);
+    place(mount, mk(new THREE.CylinderGeometry(0.09, 0.10, 0.20, 8), M(gondCols[(i+5)%8], 0.6)), 0.10, -0.32, -0.04);
   }
 
   // 24 LED rim lights
@@ -444,6 +449,16 @@ export function createCarousel(col) {
     horse.userData.phase = (i / 5) * Math.PI * 2;
     horse.name = `horse_${i}`;
     top.add(horse);
+
+    // Rider sitting on the horse, so it's visible what people are paying for
+    const riderSkin = SKIN_TONES_LOCAL[i % SKIN_TONES_LOCAL.length];
+    const rider = grp(horse, 0, 0.42, 0.02, `rider_${i}`);
+    place(rider, mk(new THREE.CylinderGeometry(0.13, 0.15, 0.40, 10), M([0xe74c3c,0x3498db,0xf39c12,0x2ecc71,0x9b59b6][i%5], 0.6)), 0, 0.18, 0);
+    place(rider, sph(0.17, M(riderSkin, 0.7), 12, 10), 0, 0.46, 0);
+    place(rider, mk(new THREE.SphereGeometry(0.18, 12, 6, 0, Math.PI*2, 0, Math.PI*0.55), M(0x2c2c2c, 0.85)), 0, 0.50, 0);
+    for (const armX of [-0.14, 0.14]) {
+      place(rider, mk(new THREE.CylinderGeometry(0.045, 0.05, 0.30, 6), M([0xe74c3c,0x3498db,0xf39c12,0x2ecc71,0x9b59b6][i%5], 0.6)), armX, 0.22, 0.12);
+    }
   }
 
   // Pennant flags
@@ -828,7 +843,14 @@ export function animateAttraction(g, dt, state) {
 
   // Ferris wheel
   const wheel = g.getObjectByName('wheel');
-  if (wheel) wheel.rotation.z += dt * 0.38 * speed;
+  if (wheel) {
+    wheel.rotation.z += dt * 0.38 * speed;
+    // Keep every gondola hanging straight down regardless of wheel angle
+    for (let i = 0; i < 8; i++) {
+      const mount = wheel.getObjectByName(`gondMount_${i}`);
+      if (mount) mount.rotation.z = -wheel.rotation.z;
+    }
+  }
 
   // Carousel top
   const top = g.getObjectByName('top');
@@ -981,6 +1003,89 @@ export function createParkingLot(col) {
   return g;
 }
 
+export function createTicketBooth(col) {
+  const g = new THREE.Group();
+  const wallM = M(0xfcf3e4, 0.9);
+  const roofM = M(col, 0.55);
+
+  place(g, mk(new THREE.CylinderGeometry(0.78, 0.84, 1.6, 8), wallM), 0, 0.84, 0);
+  place(g, mk(new THREE.BoxGeometry(0.9, 0.62, 0.05), Mg(0x87ceeb, 0.5)), 0, 1.05, 0.74);
+  place(g, mk(new THREE.BoxGeometry(0.7, 0.06, 0.3), M(0x8B6914, 0.6)), 0, 0.74, 0.74);
+  place(g, mk(new THREE.ConeGeometry(1.05, 0.7, 8), roofM), 0, 1.98, 0);
+  place(g, mk(new THREE.CylinderGeometry(1.0, 1.0, 0.06, 8), M(0xd4af37, 0.3, 0.4)), 0, 1.65, 0);
+
+  // Ticket sign
+  place(g, box(0.9, 0.34, 0.04, Me(col, 0.6)), 0, 2.5, 0);
+  place(g, box(1.0, 0.06, 0.06, Mm(0x9aacbb, 0.3)), 0, 2.5, 0);
+
+  // A little roll of tickets on the counter
+  for (let i = 0; i < 3; i++) {
+    place(g, mk(new THREE.CylinderGeometry(0.07, 0.07, 0.10, 10), M([0xe74c3c,0xf1c40f,0x3498db][i], 0.5)), -0.18 + i * 0.18, 0.78, 0.7);
+  }
+
+  return g;
+}
+
+export function createFenceSegment(T3D, x, z, rotY) {
+  const g = new THREE.Group();
+  const postM = M(0x8B6914, 0.7);
+  const railM = M(0xd9c49a, 0.65);
+  place(g, mk(new THREE.CylinderGeometry(0.05, 0.06, 0.62, 6), postM), -T3D/2 + 0.05, 0.31, 0);
+  place(g, mk(new THREE.CylinderGeometry(0.05, 0.06, 0.62, 6), postM),  T3D/2 - 0.05, 0.31, 0);
+  place(g, mk(new THREE.BoxGeometry(T3D, 0.06, 0.06), railM), 0, 0.46, 0);
+  place(g, mk(new THREE.BoxGeometry(T3D, 0.06, 0.06), railM), 0, 0.24, 0);
+  g.position.set(x, 0, z);
+  g.rotation.y = rotY;
+  return g;
+}
+
+export function createCar(bodyCol, isTaxi = false) {
+  const g = new THREE.Group();
+  const bodyM = M(bodyCol, 0.4, 0.15);
+  place(g, mk(new THREE.BoxGeometry(1.1, 0.4, 2.1), bodyM), 0, 0.36, 0);
+  place(g, mk(new THREE.BoxGeometry(0.86, 0.34, 1.1), Mg(0x87ceeb, 0.15)), 0, 0.68, -0.1);
+  if (isTaxi) {
+    place(g, mk(new THREE.BoxGeometry(0.6, 0.12, 0.7), M(0x1a1a1a, 0.6)), 0, 0.88, -0.1);
+    place(g, box(1.12, 0.07, 0.18, M(0x111111, 0.6)), 0, 0.48, 0.95);
+    place(g, box(1.12, 0.07, 0.18, M(0xf1c40f, 0.6)), 0, 0.48, -1.0);
+  }
+  for (const wz of [-0.7, 0.7]) for (const wx of [-0.5, 0.5]) {
+    const wheel = mk(new THREE.CylinderGeometry(0.2, 0.2, 0.18, 12), Mm(0x222222, 0.4));
+    wheel.rotation.z = Math.PI / 2;
+    place(g, wheel, wx, 0.2, wz);
+  }
+  place(g, box(0.9, 0.08, 0.1, Me(0xffeecc, 0.7)), 0, 0.36, 1.04);
+  place(g, box(0.9, 0.08, 0.1, Me(0xff3333, 0.6)), 0, 0.36, -1.04);
+  return g;
+}
+
+export function createCityBuilding(seed) {
+  const g = new THREE.Group();
+  const h = 6 + (seed % 7) * 2.2;
+  const w = 3.2 + (seed % 3) * 0.6;
+  const cols = [0x9aa5ad, 0xb7c0c7, 0x8c97a3, 0xa3aab0, 0xc2bcae];
+  const wallM = M(cols[seed % cols.length], 0.75);
+  place(g, mk(new THREE.BoxGeometry(w, h, w), wallM), 0, h / 2, 0);
+
+  const winM = Me(0xffe9a8, seed % 4 === 0 ? 0.0 : 0.9);
+  const rows = Math.max(2, Math.floor(h / 1.4));
+  for (let r = 0; r < rows; r++) {
+    for (const side of [0, 1, 2, 3]) {
+      const wy = 1.0 + r * 1.3;
+      if (wy > h - 0.6) continue;
+      const win = mk(new THREE.BoxGeometry(0.5, 0.7, 0.04), winM);
+      const off = w / 2 + 0.02;
+      if (side === 0) { win.position.set(0, wy, off); }
+      if (side === 1) { win.position.set(0, wy, -off); win.rotation.y = Math.PI; }
+      if (side === 2) { win.position.set(off, wy, 0); win.rotation.y = Math.PI / 2; }
+      if (side === 3) { win.position.set(-off, wy, 0); win.rotation.y = -Math.PI / 2; }
+      g.add(win);
+    }
+  }
+  place(g, mk(new THREE.BoxGeometry(w * 0.94, 0.12, w * 0.94), M(0x6e7880, 0.8)), 0, h + 0.06, 0);
+  return g;
+}
+
 export function createAttractionModel(typeId, col) {
   switch (typeId) {
     case 'ferris_wheel':   return createFerrisWheel(col);
@@ -992,6 +1097,7 @@ export function createAttractionModel(typeId, col) {
     case 'haunted_house':  return createHauntedHouse(col);
     case 'balloon_ride':   return createBalloonRide(col);
     case 'parking':        return createParkingLot(col);
+    case 'ticket_booth':   return createTicketBooth(col);
     default: {
       const g = new THREE.Group();
       place(g, mk(new THREE.BoxGeometry(2, 2, 2), M(col, 0.6)), 0, 1, 0);
