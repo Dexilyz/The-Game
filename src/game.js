@@ -754,7 +754,8 @@ class Game {
   }
 
   resize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = window.innerWidth;
+    const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
     this.renderer.setSize(w, h);
     if (this.camera) {
       this.camera.aspect = w / h;

@@ -6,6 +6,18 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>🎡 Park Tycoon 3D</title>
   <link rel="stylesheet" href="style.css">
+  <script>
+    (function () {
+      function setAppHeight() {
+        var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+        document.documentElement.style.setProperty('--app-h', h + 'px');
+      }
+      setAppHeight();
+      window.addEventListener('resize', setAppHeight);
+      window.addEventListener('orientationchange', setAppHeight);
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', setAppHeight);
+    })();
+  </script>
 </head>
 <body>
 <div id="app">
