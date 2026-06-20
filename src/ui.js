@@ -1,4 +1,4 @@
-import { ATTRACTIONS, BUILDER_SAL, BUILDER_COST, PATH_COST, BUILD_DEPOSIT_FRAC, MAX_LEVEL, UPGRADE_COST_MULT } from './data.js';
+import { ATTRACTIONS, BUILDER_SAL, BUILDER_COST, PATH_COST, BUILD_DEPOSIT_FRAC, MAX_LEVEL, UPGRADE_COST_MULT, PITCH_LINES } from './data.js';
 import { fmt$ } from './utils.js';
 
 export class UI {
@@ -6,6 +6,7 @@ export class UI {
     this.game   = game;
     this._ntfs  = [];
     this._pendingDeal = null;
+    this._selectedPitchIds = [];
     this._buildDOM();
     this._bindEvents();
   }
@@ -112,6 +113,15 @@ export class UI {
       document.getElementById('inv-modal').classList.add('hidden');
     });
 
+    // Build confirmation modal: request investor funding instead of paying cash
+    document.getElementById('bc-investor').addEventListener('click', () => {
+      if (!this._pendingBuild) return;
+      const { gx, gy, typeId } = this._pendingBuild;
+      this._pendingBuild = null;
+      document.getElementById('build-modal').classList.add('hidden');
+      this.game.requestBlueprint(gx, gy, typeId);
+    });
+
     // Build confirmation modal
     document.getElementById('bc-confirm').addEventListener('click', () => {
       if (!this._pendingBuild) return;
@@ -150,6 +160,36 @@ export class UI {
     document.getElementById('attr-backdrop').addEventListener('click', () => {
       this._pendingAttrId = null;
       document.getElementById('attr-modal').classList.add('hidden');
+    });
+
+    // Negotiation modal
+    document.getElementById('neg-submit').addEventListener('click', () => {
+      if (this._selectedPitchIds.length === 0) {
+        this.notify('❌ Выберите хотя бы один аргумент', 'error'); return;
+      }
+      const ids = this._selectedPitchIds.slice();
+      document.getElementById('negotiate-modal').classList.add('hidden');
+      this.game.submitPitch(ids);
+    });
+    document.getElementById('neg-cancel').addEventListener('click', () => {
+      this.closeNegotiation();
+      this.game.pendingBlueprint = null;
+      this.game._negotiationOpened = false;
+    });
+    document.getElementById('negotiate-backdrop').addEventListener('click', () => {
+      this.closeNegotiation();
+      this.game.pendingBlueprint = null;
+      this.game._negotiationOpened = false;
+    });
+
+    // AI key (Gemini) — stored locally in this browser only
+    const keyInput = document.getElementById('ai-key-input');
+    const savedKey = localStorage.getItem('investorApiKey');
+    if (savedKey) keyInput.value = savedKey;
+    document.getElementById('ai-key-save').addEventListener('click', () => {
+      const v = keyInput.value.trim();
+      if (v) { localStorage.setItem('investorApiKey', v); this.notify('🔑 Ключ ИИ сохранён в этом браузере', 'success'); }
+      else { localStorage.removeItem('investorApiKey'); this.notify('🔑 Ключ ИИ удалён', 'info'); }
     });
 
     // Pause
@@ -258,6 +298,29 @@ export class UI {
     document.getElementById('bc-deposit').textContent = fmt$(Math.round(def.cost * BUILD_DEPOSIT_FRAC));
     document.getElementById('bc-size').textContent = `${def.size[0]}×${def.size[1]}`;
     document.getElementById('build-modal').classList.remove('hidden');
+  }
+
+  openNegotiation(blueprint) {
+    this._selectedPitchIds = [];
+    document.getElementById('neg-sub').textContent =
+      `${blueprint.emoji} ${blueprint.name} — ${fmt$(blueprint.cost)}. Выберите аргументы для презентации:`;
+    const chips = document.getElementById('neg-chips');
+    chips.innerHTML = PITCH_LINES.map(p =>
+      `<div class="pitch-chip" data-id="${p.id}">${p.text}</div>`
+    ).join('');
+    chips.querySelectorAll('.pitch-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const id = chip.dataset.id;
+        const i  = this._selectedPitchIds.indexOf(id);
+        if (i >= 0) { this._selectedPitchIds.splice(i, 1); chip.classList.remove('sel'); }
+        else { this._selectedPitchIds.push(id); chip.classList.add('sel'); }
+      });
+    });
+    document.getElementById('negotiate-modal').classList.remove('hidden');
+  }
+
+  closeNegotiation() {
+    document.getElementById('negotiate-modal').classList.add('hidden');
   }
 
   showAttrInfo(attrId) {

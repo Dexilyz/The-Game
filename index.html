@@ -125,6 +125,17 @@
     <div class="shandle"></div>
     <div class="sh-head"><h2>💼 Инвестиции</h2><button class="xbtn" data-sh="sh-invest">✕</button></div>
     <div id="invest-body"></div>
+    <div class="hire-card">
+      <div class="hire-ico">🔑</div>
+      <div style="width:100%">
+        <div class="hire-title">ИИ-инвестор (необязательно)</div>
+        <div class="hire-sub">Вставьте свой ключ Gemini API, чтобы решения инвестора принимал настоящий ИИ. Ключ хранится только в этом браузере.</div>
+        <div id="ai-key-row">
+          <input type="password" id="ai-key-input" placeholder="Ключ Gemini API…">
+          <button id="ai-key-save">💾</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- SHEET: Stats -->
@@ -188,6 +199,22 @@
       <div class="inv-btns">
         <button class="btn-decline" id="bc-cancel">Отмена</button>
         <button class="btn-accept" id="bc-confirm">✓ Построить</button>
+      </div>
+      <button class="btn-investor" id="bc-investor">💼 Запросить у инвестора</button>
+    </div>
+  </div>
+
+  <!-- NEGOTIATION MODAL -->
+  <div id="negotiate-modal" class="hidden">
+    <div id="negotiate-backdrop"></div>
+    <div id="negotiate-card">
+      <div id="neg-ico">💼</div>
+      <h3>Презентация проекта</h3>
+      <p id="neg-sub"></p>
+      <div id="neg-chips"></div>
+      <div class="inv-btns">
+        <button class="btn-decline" id="neg-cancel">Отмена</button>
+        <button class="btn-accept" id="neg-submit">📣 Представить проект</button>
       </div>
     </div>
   </div>

@@ -4,9 +4,10 @@ import { Economy }          from './economy.js';
 import { InvestmentSystem } from './investment.js';
 import { UI }               from './ui.js';
 import { Visitor, Builder, Staff } from './character.js';
-import { createVisitor, createBuilder, createInvestor, createStaff, animateCharacter, animateAttraction, createAttractionModel, createCar, createCityBuilding } from './models.js';
+import { createVisitor, createBuilder, createInvestor, createStaff, createPlayerAvatar, createInvestorOffice, animateCharacter, animateAttraction, createAttractionModel, createCar, createCityBuilding } from './models.js';
 import { TILE, GRID_W, GRID_H, T3D, BUILDER_COST, BUILDER_SAL, MAX_BUILDERS, STAFF_COST, STAFF_SAL, MAX_STAFF, ATTRACTIONS, SKIN_TONES, HAIR_COLORS, SHIRT_COLS, PANT_COLS, TICKET_PRICE } from './data.js';
-import { rnd, rndInt, fmt$, pick, lerp } from './utils.js';
+import { rnd, rndInt, fmt$, pick, lerp, uid } from './utils.js';
+import { evaluatePitch } from './negotiation.js';
 
 class Game {
   constructor() {
@@ -36,6 +37,7 @@ class Game {
     this._setupLights();
     this._setupGround();
     this._setupCity();
+    this._setupInvestorOffice();
 
     // ── Systems ──
     this.park       = new Park(this);
@@ -59,6 +61,9 @@ class Game {
     this._hoverGx      = -1;
     this._hoverGy      = -1;
     this._preview      = null;
+    this.pendingBlueprint = null;
+
+    this._setupAvatar();
 
     // Raycaster for tile selection
     this._ray   = new THREE.Raycaster();
@@ -198,6 +203,102 @@ class Game {
     }
   }
 
+  // Investor office sits outside the park, south of the entrance, past the
+  // ring road, so the avatar has to physically walk there to pitch a project.
+  _setupInvestorOffice() {
+    const W = GRID_W * T3D, H = GRID_H * T3D;
+    const x = W / 2, z = H / 2 + Math.max(W, H) / 2 + 10 + 4.5 + 18;
+    const mesh = createInvestorOffice();
+    mesh.position.set(x, 0, z);
+    this.scene.add(mesh);
+    this.investorOffice = { mesh, x, z };
+  }
+
+  // ── Player avatar ────────────────────────────────────────────────────────
+  _setupAvatar() {
+    const ex = this.park.entranceX, ey = this.park.entranceY;
+    const x = ex * T3D + T3D / 2, z = ey * T3D - T3D / 2;
+    const mesh = createPlayerAvatar({ skin: pick(SKIN_TONES), hair: pick(HAIR_COLORS), hairStyle: 1 });
+    mesh.position.set(x, 0, z);
+    this.scene.add(mesh);
+    this.avatar = { mesh, x, z, tx: x, tz: z, moving: false, speed: 8 };
+  }
+
+  _moveAvatarTo(x, z) {
+    if (!this.avatar) return;
+    this.avatar.tx = x;
+    this.avatar.tz = z;
+  }
+
+  _updateAvatar(dt) {
+    const a = this.avatar;
+    if (!a) return;
+    const dx = a.tx - a.x, dz = a.tz - a.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 0.08) {
+      const step = Math.min(d, a.speed * dt);
+      a.x += (dx / d) * step;
+      a.z += (dz / d) * step;
+      a.mesh.rotation.y = Math.atan2(dx, dz);
+      a.moving = true;
+    } else {
+      a.moving = false;
+    }
+    a.mesh.position.set(a.x, 0, a.z);
+    animateCharacter(a.mesh, dt, a.moving, false);
+    this._checkAvatarProximity();
+  }
+
+  _checkAvatarProximity() {
+    if (!this.pendingBlueprint || this._negotiationOpened) return;
+    const a = this.avatar, o = this.investorOffice;
+    if (!a || !o) return;
+    if (Math.hypot(a.x - o.x, a.z - o.z) < 6) {
+      this._negotiationOpened = true;
+      this.ui.openNegotiation(this.pendingBlueprint);
+    }
+  }
+
+  // Player has chosen a build site + type but wants investor funding instead
+  // of paying out of pocket. Park the blueprint, send the avatar walking to
+  // the investor's office; the negotiation modal opens on arrival.
+  requestBlueprint(gx, gy, typeId) {
+    const def = ATTRACTIONS[typeId];
+    if (!def) return;
+    this.pendingBlueprint = { id: uid(), gx, gy, typeId, name: def.name, emoji: def.emoji, cost: def.cost };
+    this._negotiationOpened = false;
+    this.ui.hideAll();
+    document.getElementById('build-modal').classList.add('hidden');
+    document.getElementById('modebar').classList.add('hidden');
+    document.querySelectorAll('.tb').forEach(b => b.classList.remove('active'));
+    this.mode = 'normal';
+    this.selectedBuild = null;
+    this._moveAvatarTo(this.investorOffice.x, this.investorOffice.z);
+    this.ui.notify('🚶 Идём к инвестору с чертежом проекта…', 'info');
+  }
+
+  async submitPitch(chosenIds) {
+    const bp = this.pendingBlueprint;
+    if (!bp) return;
+    this.ui.notify('💼 Инвестор изучает предложение…', 'info');
+    const result = await evaluatePitch(bp, chosenIds, this);
+    if (result.approved) {
+      this.economy.addInvestment({
+        id: uid(), name: 'Инвестор', amount: bp.cost,
+        equity: rndInt(8, 18), daysLeft: 30,
+      });
+      const attr = this.park.placeAttraction(bp.gx, bp.gy, bp.typeId);
+      if (attr) this.ui.notify(`✅ Инвестор одобрил проект! ${result.reason}`, 'success');
+      else this.ui.notify('⚠️ Инвестор согласился, но место уже занято.', 'warn');
+    } else {
+      this.ui.notify(`❌ Инвестор отказал: ${result.reason}`, 'error');
+    }
+    this.pendingBlueprint = null;
+    this._negotiationOpened = false;
+    this.ui.closeNegotiation();
+    this._moveAvatarTo(this.park.entranceX * T3D + T3D / 2, this.park.entranceY * T3D - T3D / 2);
+  }
+
   // ── Camera ───────────────────────────────────────────────────────────────
   _clampCamTarget() {
     const margin = T3D * 2;
@@ -242,6 +343,7 @@ class Game {
     this._updateBuilders(dt, t);
     this._updateStaff(dt, t);
     this._updateCars(dt);
+    this._updateAvatar(dt);
     this._spawnVisitors(dt);
     this._animateAttractions(dt);
     this._updateInvestorModels(dt, t);
@@ -616,7 +718,8 @@ class Game {
       }
     } else if (this.mode === 'normal') {
       const attr = this.park.attrAt(gx, gy);
-      if (attr && attr.state === 'open') this.ui.showAttrInfo(attr.id);
+      if (attr && attr.state === 'open') { this.ui.showAttrInfo(attr.id); return; }
+      this._moveAvatarTo(this._hoverGround.x, this._hoverGround.z);
     }
   }
 

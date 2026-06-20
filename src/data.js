@@ -110,3 +110,17 @@ export const BUILD_DEPOSIT_FRAC = 0.2;
 export const PLOT_MARGIN_START = 5;  // tiles of unowned land on each side at start
 export const PLOT_EXPAND_STEP  = 2;  // tiles gained per expansion (per side)
 export const PLOT_EXPAND_COST  = 2500;
+
+// Pitch lines the player can choose from when presenting a blueprint to an
+// investor. weight is how convincing the line actually is — picking weak
+// ones lowers the chance of approval, by design.
+export const PITCH_LINES = [
+  { id: 'profit',   text: 'Этот аттракцион быстро окупится и принесёт стабильный доход', weight: 0.42 },
+  { id: 'family',   text: 'Это семейный аттракцион — понравится и детям, и взрослым',      weight: 0.34 },
+  { id: 'rating',   text: 'Он поднимет звёздный рейтинг нашего парка',                     weight: 0.30 },
+  { id: 'capacity', text: 'Большая пропускная способность — мы примем много гостей',        weight: 0.26 },
+  { id: 'safety',   text: 'Конструкция полностью безопасна и сертифицирована',              weight: 0.22 },
+  { id: 'trend',     text: 'Сейчас это самый модный аттракцион в индустрии',                 weight: 0.12 },
+  { id: 'weather',   text: 'В этом сезоне отличная погода для прогулок',                     weight: 0.04 },
+  { id: 'gut',       text: 'У меня просто хорошее предчувствие насчёт этого',                weight: 0.02 },
+];

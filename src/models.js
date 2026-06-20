@@ -246,6 +246,91 @@ export function createInvestor(app) {
   return g;
 }
 
+// ─── PLAYER AVATAR ───────────────────────────────────────────────────────────
+export function createPlayerAvatar(app) {
+  const g = createVisitor({ ...app, shirt: app.shirt ?? 0x2980b9, pants: app.pants ?? 0x1a252f, acc: null });
+
+  // Vest (visually distinct from regular visitors/builders)
+  const vestM = M(0xf1c40f, 0.6);
+  place(g, box(0.34, 0.50, 0.32, vestM), -0.20, 1.04, 0);
+  place(g, box(0.34, 0.50, 0.32, vestM),  0.20, 1.04, 0);
+
+  // Clipboard / blueprint roll held in left hand
+  const clip = grp(g, -0.50, 1.00, 0.10, 'clipboard');
+  place(clip, box(0.30, 0.40, 0.03, M(0x6e4f2a, 0.6)));
+  place(clip, box(0.24, 0.32, 0.01, M(0xf5ecd6, 0.7)), 0, 0.01, 0.02);
+  for (let i = 0; i < 4; i++) {
+    place(clip, box(0.18, 0.012, 0.005, M(0x999999, 0.6)), 0, 0.10 - i * 0.07, 0.025);
+  }
+  place(clip, box(0.10, 0.05, 0.04, M(0x888888, 0.4)), 0, 0.17, 0.02);
+
+  // Cap to make the avatar stand out at a glance
+  const head = g.getObjectByName('head');
+  if (head) {
+    place(head, mk(new THREE.CylinderGeometry(0.34, 0.40, 0.10, 12), M(0xe67e22, 0.6)), 0, 0.40, 0);
+    place(head, box(0.40, 0.05, 0.30, M(0xe67e22, 0.6)), 0, 0.36, 0.30);
+  }
+
+  // Star marker above head so it's always identifiable
+  const star = mk(new THREE.ConeGeometry(0.18, 0.30, 4), Me(0xffd700, 0.8));
+  star.rotation.y = Math.PI / 4;
+  star.position.y = 2.55;
+  star.name = 'avatarMarker';
+  g.add(star);
+
+  return g;
+}
+
+// ─── INVESTOR OFFICE ─────────────────────────────────────────────────────────
+export function createInvestorOffice() {
+  const g = new THREE.Group();
+  const w = 6.0, d = 5.2, h = 9.5;
+
+  const wallM = M(0x2c3e50, 0.55, 0.1);
+  place(g, mk(new THREE.BoxGeometry(w, h, d), wallM), 0, h / 2, 0);
+
+  // Gold trim band
+  const trimM = Mm(0xf1c40f, 0.25);
+  place(g, mk(new THREE.BoxGeometry(w + 0.1, 0.30, d + 0.1), trimM), 0, h * 0.5, 0);
+  place(g, mk(new THREE.BoxGeometry(w + 0.06, 0.16, d + 0.06), trimM), 0, h - 0.3, 0);
+
+  // Windows, blue glass glow
+  const winM = Me(0x6fc3ff, 0.6);
+  const rows = Math.max(2, Math.floor(h / 1.5));
+  for (let r = 0; r < rows; r++) {
+    const wy = 1.1 + r * 1.5;
+    if (wy > h - 0.7) continue;
+    for (const side of [0, 1, 2, 3]) {
+      const win = mk(new THREE.BoxGeometry(0.6, 0.85, 0.04), winM);
+      const off = (side < 2 ? d : w) / 2 + 0.02;
+      if (side === 0) win.position.set(0, wy, d / 2 + 0.02);
+      if (side === 1) { win.position.set(0, wy, -d / 2 - 0.02); win.rotation.y = Math.PI; }
+      if (side === 2) { win.position.set(w / 2 + 0.02, wy, 0); win.rotation.y = Math.PI / 2; }
+      if (side === 3) { win.position.set(-w / 2 - 0.02, wy, 0); win.rotation.y = -Math.PI / 2; }
+      g.add(win);
+    }
+  }
+
+  // Roof cap
+  place(g, mk(new THREE.BoxGeometry(w * 0.96, 0.18, d * 0.96), M(0x1a2533, 0.6)), 0, h + 0.09, 0);
+
+  // Entrance canopy
+  const canopy = grp(g, 0, 2.0, d / 2 + 0.5, 'canopy');
+  place(canopy, mk(new THREE.BoxGeometry(w * 0.7, 0.12, 1.0), trimM));
+  place(canopy, box(0.10, 1.9, 0.10, Mm(0x888888)), -w * 0.32, -1.0, 0.4);
+  place(canopy, box(0.10, 1.9, 0.10, Mm(0x888888)),  w * 0.32, -1.0, 0.4);
+
+  // Door
+  place(g, box(1.4, 1.9, 0.06, M(0x1a2533, 0.4)), 0, 0.95, d / 2 + 0.04);
+
+  // Sign: "$" emblem above entrance
+  const signBg = mk(new THREE.CircleGeometry(0.55, 16), Me(0xf1c40f, 0.5));
+  signBg.position.set(0, 2.9, d / 2 + 0.55);
+  g.add(signBg);
+
+  return g;
+}
+
 // ─── CHARACTER ANIMATION ─────────────────────────────────────────────────────
 export function animateCharacter(root, dt, isWalking, isWorking = false) {
   const d = root.userData;
